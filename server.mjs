@@ -265,6 +265,7 @@ let OIDC_ISSUER = (config.oidc?.issuer ?? process.env.OIDC_ISSUER ?? '').replace
 let OIDC_CLIENT_ID = config.oidc?.clientId ?? process.env.OIDC_CLIENT_ID ?? ''
 let OIDC_CLIENT_SECRET = config.oidc?.clientSecret ?? process.env.OIDC_CLIENT_SECRET ?? ''
 let OIDC_REDIRECT_URI = config.oidc?.redirectUri ?? process.env.OIDC_REDIRECT_URI ?? `${PUBLIC_URL}/oidc/callback`
+let OIDC_SCOPE = config.oidc?.scope ?? process.env.OIDC_SCOPE ?? 'openid profile email'
 let OIDC_ENABLED = OIDC_ISSUER.length > 0 && OIDC_CLIENT_ID.length > 0
 function refreshRuntimeSettings() {
   PUBLIC_URL = (config.publicUrl ?? process.env.BROKER_PUBLIC_URL ?? 'http://127.0.0.1:8788').replace(/\/+$/, '')
@@ -273,6 +274,7 @@ function refreshRuntimeSettings() {
   OIDC_CLIENT_ID = config.oidc?.clientId ?? process.env.OIDC_CLIENT_ID ?? ''
   OIDC_CLIENT_SECRET = config.oidc?.clientSecret ?? process.env.OIDC_CLIENT_SECRET ?? ''
   OIDC_REDIRECT_URI = config.oidc?.redirectUri ?? process.env.OIDC_REDIRECT_URI ?? `${PUBLIC_URL}/oidc/callback`
+  OIDC_SCOPE = config.oidc?.scope ?? process.env.OIDC_SCOPE ?? 'openid profile email'
   OIDC_ENABLED = OIDC_ISSUER.length > 0 && OIDC_CLIENT_ID.length > 0
   oidcDiscoveryCache = undefined
 }
@@ -713,9 +715,21 @@ ${OIDC_ENABLED ? '<a class="btn" href="/oidc/login">使用 OIDC / Passkey 登录
 let oidcDiscoveryCache
 async function oidcDiscovery() {
   if (oidcDiscoveryCache !== undefined) return oidcDiscoveryCache
-  const response = await fetch(`${OIDC_ISSUER}/.well-known/openid-configuration`)
-  if (!response.ok) throw new Error(`OIDC discovery failed: HTTP ${response.status}`)
-  oidcDiscoveryCache = await response.json()
+  let discovered = {}
+  try {
+    const response = await fetch(`${OIDC_ISSUER}/.well-known/openid-configuration`)
+    if (response.ok) discovered = await response.json()
+  } catch {}
+  const overrides = config.oidc ?? {}
+  const metadata = {
+    ...discovered,
+    authorization_endpoint: overrides.authorizationEndpoint || discovered.authorization_endpoint || `${OIDC_ISSUER}/authorize`,
+    token_endpoint: overrides.tokenEndpoint || discovered.token_endpoint || `${OIDC_ISSUER}/token`,
+    userinfo_endpoint: overrides.userinfoEndpoint || discovered.userinfo_endpoint || `${OIDC_ISSUER}/userinfo`,
+    jwks_uri: overrides.jwksUri || discovered.jwks_uri || `${OIDC_ISSUER}/jwks`,
+  }
+  if (!metadata.authorization_endpoint || !metadata.token_endpoint) throw new Error('OIDC endpoints are not configured')
+  oidcDiscoveryCache = metadata
   return oidcDiscoveryCache
 }
 
@@ -973,6 +987,15 @@ form.inline{display:inline}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:
 <label class="hint">Client ID<br><input name="oidcClientId" style="width:100%"></label>
 <label class="hint">Client Secret（public client 可留空）<br><input name="oidcClientSecret" type="password" style="width:100%"></label>
 <label class="hint">Redirect URI<br><input name="oidcRedirectUri" style="width:100%"></label>
+<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">高级设置（端点覆盖 / claim 映射）</summary>
+<label class="hint">Authorization Endpoint（留空自动发现）<br><input name="oidcAuthorizationEndpoint" style="width:100%"></label>
+<label class="hint">Token Endpoint<br><input name="oidcTokenEndpoint" style="width:100%"></label>
+<label class="hint">Userinfo Endpoint<br><input name="oidcUserinfoEndpoint" style="width:100%"></label>
+<label class="hint">JWKS URI<br><input name="oidcJwksUri" style="width:100%"></label>
+<label class="hint">Scope<br><input name="oidcScope" placeholder="openid profile email" style="width:100%"></label>
+<div class="row"><input name="oidcClaimIdentifier" placeholder="identifier claim (sub)" style="width:180px"><input name="oidcClaimName" placeholder="name claim (name)" style="width:180px"><input name="oidcClaimEmail" placeholder="email claim (email)" style="width:180px"><input name="oidcClaimAvatar" placeholder="avatar claim (picture)" style="width:180px"></div>
+<div class="hint">端点留空时使用 OIDC Discovery；claim 映射用于把 id_token 字段写入个人资料。</div>
+</details>
 <button class="primary" data-act="settings-save">保存设置</button>
 <button data-act="settings-restart">保存并重启容器</button>
 </form>
@@ -1047,8 +1070,8 @@ async function loadStats(range){try{statsRange=range||statsRange;var s=await api
 function settingsField(name){var el=document.querySelector('[name="'+name+'"]');return el?el.value:''}
 async function loadProfile(){try{var p=await api('/api/profile');var f=$('profile-form');if(f){f.name.value=p.name||'';f.email.value=p.email||'';f.phone.value=p.phone||'';f.avatarUrl.value=p.avatarUrl||''}var ti=$('totp-info');if(ti)ti.innerHTML=p.totpEnabled?'已启用 TOTP 两步验证':'未启用';var bi=$('oidc-bind-info');if(bi)bi.innerHTML=p.oidcBound?'已绑定 OIDC'+(p.oidcEmail?'（'+esc(p.oidcEmail)+'）':''):'未绑定 OIDC（下次用 OIDC 登录会自动绑定）';}catch(e){}}
 async function saveProfile(){var f=$('profile-form');try{await post('/api/profile',{name:f.name.value,email:f.email.value,phone:f.phone.value,avatarUrl:f.avatarUrl.value});toast('资料已保存');loadProfile()}catch(e){toast(e.message,true)}}
-async function loadSettings(){try{var s=await api('/api/settings');state.agentWrite=s.agentWrite||{};document.querySelectorAll('[name="publicUrl"]').forEach(function(el){el.value=s.publicUrl||''});document.querySelectorAll('[name="serverUrl"]').forEach(function(el){el.value=s.serverUrl||''});document.querySelectorAll('[name="oidcIssuer"]').forEach(function(el){el.value=s.oidc.issuer||''});document.querySelectorAll('[name="oidcClientId"]').forEach(function(el){el.value=s.oidc.clientId||''});document.querySelectorAll('[name="oidcRedirectUri"]').forEach(function(el){el.value=s.oidc.redirectUri||''});document.querySelectorAll('[name="telegramChatId"]').forEach(function(el){el.value=s.telegram?String(s.telegram.chatId||''):''});if(s.gotify){document.querySelectorAll('[name="gotifyUrl"]').forEach(function(el){el.value=s.gotify.url||''})}if(s.wxpush){document.querySelectorAll('[name="wxpushUrl"]').forEach(function(el){el.value=s.wxpush.url||''})}if($('ntfy-input'))$('ntfy-input').value=s.ntfyUrl||'';var si=$('settings-info');if(si)si.innerHTML='Vault：<code>'+esc(s.serverUrl||'')+'</code> · 端口 '+esc(s.port)+' · 绑定 '+esc(s.bind)+' · 自动解锁：'+(s.autoUnlock?'已启用':'未启用');var sec=$('security-info');if(sec)sec.innerHTML=s.autoUnlock?'主密码加密保存在容器卷（AES-GCM）。':'未启用自动解锁，重启后需手动输入主密码。';var nt=$('notify-info');if(nt)nt.innerHTML=s.ntfyUrl?'当前回调：<code>'+esc(s.ntfyUrl)+'</code>':'未配置 ntfy。';var tg=$('telegram-info');if(tg)tg.innerHTML=s.telegram&&s.telegram.configured?'Telegram 已配置（Chat '+esc(String(s.telegram.chatId||''))+'）':'未配置 Telegram；保存后需重启生效。';var gf=$('gotify-info');if(gf)gf.innerHTML=s.gotify&&s.gotify.configured?'Gotify 已配置：<code>'+esc(s.gotify.url||'')+'</code>':'未配置 Gotify。';var wx=$('wxpush-info');if(wx)wx.innerHTML=s.wxpush&&s.wxpush.configured?'wxpush 已配置：<code>'+esc(s.wxpush.url||'')+'</code>':'未配置 wxpush。';var si2=$('settings-info');if(si2&&s.encryptionKeyFingerprint)si2.innerHTML+='<br>加密密钥指纹：<code>'+esc(s.encryptionKeyFingerprint)+'</code>（AES-256-GCM）';}catch(e){}}
-async function saveSettings(){try{var data={publicUrl:settingsField('publicUrl'),serverUrl:settingsField('serverUrl'),oidcIssuer:settingsField('oidcIssuer'),oidcClientId:settingsField('oidcClientId'),oidcClientSecret:settingsField('oidcClientSecret'),oidcRedirectUri:settingsField('oidcRedirectUri'),ntfyUrl:$('ntfy-input')?$('ntfy-input').value:'',telegramToken:settingsField('telegramToken'),telegramChatId:settingsField('telegramChatId'),gotifyUrl:settingsField('gotifyUrl'),gotifyToken:settingsField('gotifyToken'),wxpushUrl:settingsField('wxpushUrl'),wxpushToken:settingsField('wxpushToken')};await post('/api/settings',data);toast('设置已保存');await loadSettings();await loadAll()}catch(e){toast(e.message,true)}}
+async function loadSettings(){try{var s=await api('/api/settings');state.agentWrite=s.agentWrite||{};document.querySelectorAll('[name="publicUrl"]').forEach(function(el){el.value=s.publicUrl||''});document.querySelectorAll('[name="serverUrl"]').forEach(function(el){el.value=s.serverUrl||''});document.querySelectorAll('[name="oidcIssuer"]').forEach(function(el){el.value=s.oidc.issuer||''});document.querySelectorAll('[name="oidcClientId"]').forEach(function(el){el.value=s.oidc.clientId||''});document.querySelectorAll('[name="oidcRedirectUri"]').forEach(function(el){el.value=s.oidc.redirectUri||''});document.querySelectorAll('[name="oidcAuthorizationEndpoint"]').forEach(function(el){el.value=s.oidc.authorizationEndpoint||''});document.querySelectorAll('[name="oidcTokenEndpoint"]').forEach(function(el){el.value=s.oidc.tokenEndpoint||''});document.querySelectorAll('[name="oidcUserinfoEndpoint"]').forEach(function(el){el.value=s.oidc.userinfoEndpoint||''});document.querySelectorAll('[name="oidcJwksUri"]').forEach(function(el){el.value=s.oidc.jwksUri||''});document.querySelectorAll('[name="oidcScope"]').forEach(function(el){el.value=s.oidc.scope||''});document.querySelectorAll('[name="oidcClaimIdentifier"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.identifier)||''});document.querySelectorAll('[name="oidcClaimName"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.name)||''});document.querySelectorAll('[name="oidcClaimEmail"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.email)||''});document.querySelectorAll('[name="oidcClaimAvatar"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.avatar)||''});document.querySelectorAll('[name="telegramChatId"]').forEach(function(el){el.value=s.telegram?String(s.telegram.chatId||''):''});if(s.gotify){document.querySelectorAll('[name="gotifyUrl"]').forEach(function(el){el.value=s.gotify.url||''})}if(s.wxpush){document.querySelectorAll('[name="wxpushUrl"]').forEach(function(el){el.value=s.wxpush.url||''})}if($('ntfy-input'))$('ntfy-input').value=s.ntfyUrl||'';var si=$('settings-info');if(si)si.innerHTML='Vault：<code>'+esc(s.serverUrl||'')+'</code> · 端口 '+esc(s.port)+' · 绑定 '+esc(s.bind)+' · 自动解锁：'+(s.autoUnlock?'已启用':'未启用');var sec=$('security-info');if(sec)sec.innerHTML=s.autoUnlock?'主密码加密保存在容器卷（AES-GCM）。':'未启用自动解锁，重启后需手动输入主密码。';var nt=$('notify-info');if(nt)nt.innerHTML=s.ntfyUrl?'当前回调：<code>'+esc(s.ntfyUrl)+'</code>':'未配置 ntfy。';var tg=$('telegram-info');if(tg)tg.innerHTML=s.telegram&&s.telegram.configured?'Telegram 已配置（Chat '+esc(String(s.telegram.chatId||''))+'）':'未配置 Telegram；保存后需重启生效。';var gf=$('gotify-info');if(gf)gf.innerHTML=s.gotify&&s.gotify.configured?'Gotify 已配置：<code>'+esc(s.gotify.url||'')+'</code>':'未配置 Gotify。';var wx=$('wxpush-info');if(wx)wx.innerHTML=s.wxpush&&s.wxpush.configured?'wxpush 已配置：<code>'+esc(s.wxpush.url||'')+'</code>':'未配置 wxpush。';var si2=$('settings-info');if(si2&&s.encryptionKeyFingerprint)si2.innerHTML+='<br>加密密钥指纹：<code>'+esc(s.encryptionKeyFingerprint)+'</code>（AES-256-GCM）';}catch(e){}}
+async function saveSettings(){try{var data={publicUrl:settingsField('publicUrl'),serverUrl:settingsField('serverUrl'),oidcIssuer:settingsField('oidcIssuer'),oidcClientId:settingsField('oidcClientId'),oidcClientSecret:settingsField('oidcClientSecret'),oidcRedirectUri:settingsField('oidcRedirectUri'),oidcScope:settingsField('oidcScope'),oidcAuthorizationEndpoint:settingsField('oidcAuthorizationEndpoint'),oidcTokenEndpoint:settingsField('oidcTokenEndpoint'),oidcUserinfoEndpoint:settingsField('oidcUserinfoEndpoint'),oidcJwksUri:settingsField('oidcJwksUri'),oidcClaimIdentifier:settingsField('oidcClaimIdentifier'),oidcClaimName:settingsField('oidcClaimName'),oidcClaimEmail:settingsField('oidcClaimEmail'),oidcClaimAvatar:settingsField('oidcClaimAvatar'),ntfyUrl:$('ntfy-input')?$('ntfy-input').value:'',telegramToken:settingsField('telegramToken'),telegramChatId:settingsField('telegramChatId'),gotifyUrl:settingsField('gotifyUrl'),gotifyToken:settingsField('gotifyToken'),wxpushUrl:settingsField('wxpushUrl'),wxpushToken:settingsField('wxpushToken')};await post('/api/settings',data);toast('设置已保存');await loadSettings();await loadAll()}catch(e){toast(e.message,true)}}
 function renderInfo(){var s=state.status||{};var info=$('overview-info');if(info)info.innerHTML='Vault: <code>'+esc(s.publicUrl||'')+'</code> · OIDC 登录：'+(s.oidc?'已启用':'未启用')+' · ntfy 通知：'+(s.ntfy?'已启用':'未启用')+' · 自动解锁：'+(s.autoUnlock?'已启用':'未启用');
   var si=$('settings-info');if(si)si.innerHTML='公开地址：<code>'+esc(s.publicUrl||'')+'</code><br>OIDC：'+(s.oidc?'已启用':'未启用')+'<br>ntfy：'+(s.ntfy?'已启用':'未启用')+'<br>自动解锁：'+(s.autoUnlock?'已启用':'未启用')+'<br>Agents：'+esc((state.agents||[]).map(function(a){return a.name}).join(', '));
   var sec=$('security-info');if(sec)sec.innerHTML=s.autoUnlock?'主密码明文保存在容器卷的 <code>master-password</code> 文件中（600 权限）。删除后需手动解锁。':'未启用自动解锁，每次重启需要手动输入主密码。';
@@ -1646,7 +1669,7 @@ const server = http.createServer(async (req, res) => {
         authorize.searchParams.set('response_type', 'code')
         authorize.searchParams.set('client_id', OIDC_CLIENT_ID)
         authorize.searchParams.set('redirect_uri', OIDC_REDIRECT_URI)
-        authorize.searchParams.set('scope', 'openid profile email')
+        authorize.searchParams.set('scope', OIDC_SCOPE)
         authorize.searchParams.set('state', state)
         authorize.searchParams.set('nonce', nonce)
         authorize.searchParams.set('code_challenge', challenge)
@@ -1684,15 +1707,22 @@ const server = http.createServer(async (req, res) => {
         throw new Error(`token exchange failed: HTTP ${tokenResponse.status} ${JSON.stringify(tokenPayload).slice(0, 200)}`)
       }
       const claims = await verifyIdToken(tokenPayload.id_token, jar.broker_oidc_nonce)
+      const claimMap = config.oidc?.claims ?? {}
+      const identifier = claims[claimMap.identifier ?? 'sub'] ?? claims.sub
+      const mappedEmail = claims[claimMap.email ?? 'email'] ?? claims.email ?? ''
+      const mappedName = claims[claimMap.name ?? 'name'] ?? claims.name ?? ''
+      const mappedAvatar = claims[claimMap.avatar ?? 'picture'] ?? claims.picture ?? ''
       if (!config.profile) config.profile = {}
       if (!config.profile.oidcSub) {
-        config.profile.oidcSub = claims.sub
-        config.profile.oidcEmail = claims.email ?? ''
-        if (!config.profile.email && claims.email) config.profile.email = claims.email
+        config.profile.oidcSub = String(identifier ?? '')
+        config.profile.oidcEmail = mappedEmail
+        if (!config.profile.email && mappedEmail) config.profile.email = mappedEmail
+        if (!config.profile.name && mappedName) config.profile.name = mappedName
+        if (!config.profile.avatarUrl && mappedAvatar) config.profile.avatarUrl = mappedAvatar
         saveConfig()
-        audit({ event: 'profile.oidc-bind', sub: claims.sub, email: claims.email })
+        audit({ event: 'profile.oidc-bind', sub: identifier, email: mappedEmail })
       }
-      audit({ event: 'admin.oidc-login', sub: claims.sub, email: claims.email })
+      audit({ event: 'admin.oidc-login', sub: identifier, email: mappedEmail })
       res.writeHead(302, {
         location: '/',
         'set-cookie': [
@@ -2148,6 +2178,12 @@ const server = http.createServer(async (req, res) => {
           clientId: OIDC_CLIENT_ID,
           hasSecret: OIDC_CLIENT_SECRET.length > 0,
           redirectUri: OIDC_REDIRECT_URI,
+          authorizationEndpoint: config.oidc?.authorizationEndpoint ?? '',
+          tokenEndpoint: config.oidc?.tokenEndpoint ?? '',
+          userinfoEndpoint: config.oidc?.userinfoEndpoint ?? '',
+          jwksUri: config.oidc?.jwksUri ?? '',
+          scope: config.oidc?.scope ?? OIDC_SCOPE,
+          claims: config.oidc?.claims ?? {},
         },
         ntfyUrl: NTFY_URL,
         port: config.port,
@@ -2173,6 +2209,20 @@ const server = http.createServer(async (req, res) => {
       if (typeof body.oidcClientId === 'string') config.oidc.clientId = body.oidcClientId.trim()
       if (typeof body.oidcClientSecret === 'string') config.oidc.clientSecret = body.oidcClientSecret
       if (typeof body.oidcRedirectUri === 'string') config.oidc.redirectUri = body.oidcRedirectUri.trim()
+      if (typeof body.oidcScope === 'string') config.oidc.scope = body.oidcScope.trim() || 'openid profile email'
+      if (typeof body.oidcAuthorizationEndpoint === 'string') config.oidc.authorizationEndpoint = body.oidcAuthorizationEndpoint.trim()
+      if (typeof body.oidcTokenEndpoint === 'string') config.oidc.tokenEndpoint = body.oidcTokenEndpoint.trim()
+      if (typeof body.oidcUserinfoEndpoint === 'string') config.oidc.userinfoEndpoint = body.oidcUserinfoEndpoint.trim()
+      if (typeof body.oidcJwksUri === 'string') config.oidc.jwksUri = body.oidcJwksUri.trim()
+      config.oidc.claims ??= {}
+      for (const [key, field] of [
+        ['identifier', 'oidcClaimIdentifier'],
+        ['name', 'oidcClaimName'],
+        ['email', 'oidcClaimEmail'],
+        ['avatar', 'oidcClaimAvatar'],
+      ]) {
+        if (typeof body[field] === 'string') config.oidc.claims[key] = body[field].trim()
+      }
       if (typeof body.telegramToken === 'string') config.telegram.token = body.telegramToken.trim()
       if (typeof body.telegramChatId === 'string') config.telegram.chatId = body.telegramChatId.trim()
       config.gotify ??= {}

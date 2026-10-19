@@ -40,6 +40,17 @@ the unlock session is only kept in memory.
 The provider must allow the redirect URI above. The broker uses discovery, PKCE
 and ID-token verification against the provider's JWKS.
 
+### Advanced OIDC
+
+The OIDC section has a collapsible advanced panel:
+
+- **Endpoint overrides**: authorization/token/userinfo/JWKS URLs. Leave empty to
+  use the issuer's discovery document; fill them for providers without discovery.
+- **Scope**: default `openid profile email`.
+- **Claim mapping**: identifier (default `sub`), name (`name`), email (`email`),
+  avatar (`picture`). On first OIDC login the mapped claims are stored in the
+  local profile; the identifier/email are also remembered for account binding.
+
 ## Optional features
 
 - Auto-unlock: place the master password in `data/master-password`; it is
