@@ -9,6 +9,16 @@ API / MCP 接口，并加上每个 Agent 独立的 token、显式审批、限时
 核心理念：**模型不需要看到密钥本身**。Agent 发起请求 → 你在网页 / Telegram /
 ntfy / Gotify / 微信（wxpush）里点同意 → Agent 拿到值；每次读取都能追溯到具体 Agent。
 
+## Cloudflare Workers 版本
+
+另有 Cloudflare Workers 原生版本：
+<https://github.com/otscup/secrets-broker-workers>。它直接读取 NodeWarden 的 D1，
+浏览器端做 KDF，Durable Object 保存会话，支持 MCP OAuth 2.1、Agent token、
+文件夹隔离和跨账户复制，不需要 NAS、Docker 或隧道。
+
+可移植的 Agent Skill 和 stdio MCP 桥接器：
+<https://github.com/otscup/secrets-broker-skill>。
+
 ## 功能
 
 - **复用现有 vault**：通过 Bitwarden CLI 访问 NodeWarden/Vaultwarden/Bitwarden，

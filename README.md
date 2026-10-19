@@ -15,6 +15,17 @@ The important property: **the model never needs to see a secret**. Agents (or
 connectors/plugins) ask the broker; the broker asks the human; the human approves once,
 for an hour, a day, a week or forever. Every read is attributed to an agent and logged.
 
+## Cloudflare Workers version
+
+A Cloudflare Workers-native port lives at
+<https://github.com/otscup/secrets-broker-workers>. It reads NodeWarden's D1
+directly, performs KDF in the browser, keeps the session in a Durable Object and
+supports MCP OAuth 2.1, agent tokens, folder isolation and cross-account copies.
+No NAS, Docker or tunnel is required.
+
+The portable agent skill and stdio MCP bridge are at
+<https://github.com/otscup/secrets-broker-skill>.
+
 ## Why
 
 AI agents routinely need API keys, cookies, passwords and tokens. Pasting them into
