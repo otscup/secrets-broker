@@ -1,5 +1,7 @@
 # Secrets Broker
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 [![CI](https://github.com/otscup/secrets-broker/actions/workflows/ci.yml/badge.svg)](https://github.com/otscup/secrets-broker/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](package.json)

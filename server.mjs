@@ -1103,16 +1103,12 @@ function renderStats(s){
   var k=$('kpis');if(!k)return;
   var cards=[{l:'读取次数',v:s.totalReads,sub:'审计日志聚合 · '+s.range},{l:'活跃 Agent',v:s.activeAgents,sub:'静态 token + OAuth 客户端'},{l:'待批准',v:s.pending,sub:'需要你处理',warn:s.pending>0},{l:'有效授权',v:s.activeGrants,sub:'含限时与永久授权'}];
   k.innerHTML=cards.map(function(c){return '<div class="kpi'+(c.warn?' warn':'')+'"><div class="label">'+c.l+'</div><div class="value">'+c.v+'</div><div class="sub">'+c.sub+'</div></div>'}).join('');
-  var buckets=s.buckets||[];var max=Math.max(1,...buckets.map(function(b){return b.count}));var W=600,H=180,px=38,py=18,iw=W-2*px,ih=H-2*py;var step=buckets.length>1?iw/(buckets.length-1):0;
-  var pts=buckets.map(function(b,i){return [px+i*step,H-py-(b.count/max)*ih]});
-  function smooth(points){if(points.length<2)return '';var n=points.length,dx=[],dy=[],m=[],t=[];for(var i=0;i<n-1;i++){dx[i]=points[i+1][0]-points[i][0];dy[i]=points[i+1][1]-points[i][1];m[i]=dx[i]===0?0:dy[i]/dx[i]}t[0]=m[0];for(var i=1;i<n-1;i++)t[i]=(m[i-1]+m[i])/2;t[n-1]=m[n-2];for(var i=0;i<n-1;i++){if(m[i]===0){t[i]=0;t[i+1]=0}else{var a=t[i]/m[i],b=t[i+1]/m[i],s=a*a+b*b;if(s>9){var k=3/Math.sqrt(s);t[i]=k*a*m[i];t[i+1]=k*b*m[i]}}}var d='M'+points[0][0].toFixed(1)+','+points[0][1].toFixed(1);for(var i=0;i<n-1;i++){var p1=points[i],p2=points[i+1],c1x=p1[0]+dx[i]/3,c1y=p1[1]+t[i]*dx[i]/3,c2x=p2[0]-dx[i]/3,c2y=p2[1]-t[i+1]*dx[i]/3;d+=' C'+c1x.toFixed(1)+','+c1y.toFixed(1)+' '+c2x.toFixed(1)+','+c2y.toFixed(1)+' '+p2[0].toFixed(1)+','+p2[1].toFixed(1)}return d}
-  var line=pts.map(function(p,i){return (i?'L':'M')+p[0].toFixed(1)+','+p[1].toFixed(1)}).join(' ');
-  var area=line+' L'+(px+(buckets.length-1)*step)+','+(H-py)+' L'+px+','+(H-py)+' Z';
+  var buckets=s.buckets||[];var max=Math.max(1,...buckets.map(function(b){return b.count}));var W=600,H=180,px=38,py=18,iw=W-2*px,ih=H-2*py;var n=buckets.length;var slot=n?iw/n:0;var barW=Math.max(2,Math.min(26,slot*0.58));
   var grid='';for(var g=0;g<=4;g++){var y=py+ih*g/4;grid+='<line x1="'+px+'" y1="'+y+'" x2="'+(W-px)+'" y2="'+y+'" stroke="currentColor" stroke-opacity=".10"/>';grid+='<text x="4" y="'+(y+3)+'" fill="currentColor" font-size="9" opacity=".5">'+Math.round(max*(4-g)/4)+'</text>'}
-  var labelIdx=[];for(var k=0;k<6;k++){var idx=Math.round(k*(buckets.length-1)/5);if(idx>=0&&labelIdx.indexOf(idx)<0)labelIdx.push(idx)}
-  var labels=labelIdx.map(function(i){return '<text x="'+pts[i][0].toFixed(1)+'" y="'+(H-4)+'" text-anchor="middle" fill="currentColor" font-size="9" opacity=".55">'+buckets[i].label+'</text>'}).join('');
-  var dots=pts.map(function(p,i){return '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="2.6" fill="#0e9f8a"/><circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="10" fill="transparent"><title>'+esc(buckets[i].label)+'：'+buckets[i].count+' 次读取</title></circle>'}).join('');
-  $('chart-box').innerHTML='<div class="hint" style="margin:0 0 4px"><span style="color:#0e9f8a">●</span> 读取次数</div><svg viewBox="0 0 '+W+' '+H+'"><defs><linearGradient id="gfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0e9f8a" stop-opacity=".28"/><stop offset="100%" stop-color="#0e9f8a" stop-opacity=".02"/></linearGradient></defs>'+grid+'<path d="'+area+'" fill="url(#gfill)"/><path d="'+line+'" fill="none" stroke="#0e9f8a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+dots+labels+'</svg>';
+  var bars=buckets.map(function(b,i){var h=(b.count/max)*ih;var x=px+i*slot+(slot-barW)/2;var y=H-py-h;return '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+barW.toFixed(1)+'" height="'+Math.max(h,0.6).toFixed(1)+'" rx="2" fill="#0f9d8a" opacity="'+(b.count>0?0.95:0.22)+'"><title>'+esc(b.label)+'：'+b.count+' 次读取</title></rect>'}).join('');
+  var labelIdx=[];for(var k=0;k<6;k++){var idx=Math.round(k*(n-1)/5);if(idx>=0&&labelIdx.indexOf(idx)<0)labelIdx.push(idx)}
+  var labels=labelIdx.map(function(i){return '<text x="'+(px+i*slot+slot/2).toFixed(1)+'" y="'+(H-4)+'" text-anchor="middle" fill="currentColor" font-size="9" opacity=".55">'+buckets[i].label+'</text>'}).join('');
+  $('chart-box').innerHTML='<div class="hint" style="margin:0 0 4px"><span style="color:#0f9d8a">●</span> 读取次数</div><svg viewBox="0 0 '+W+' '+H+'">'+grid+bars+labels+'</svg>';
   var top=s.topItems||[];var totalTop=top.reduce(function(sum,t){return sum+t.count},0)||1;var maxTop=Math.max(1,...top.map(function(t){return t.count}));var urlMap={};(state.items||[]).forEach(function(item){urlMap[item.name]=item.url||''});
   $('top-box').innerHTML=top.length?'<table class="rank-table"><tr><th>#</th><th>条目</th><th>网址</th><th>读取</th><th>占比</th><th>趋势</th></tr>'+top.map(function(t,i){return '<tr><td>'+(i+1)+'</td><td><b>'+esc(t.name)+'</b></td><td class="hint">'+esc(urlMap[t.name]||'')+'</td><td>'+t.count+'</td><td>'+Math.round(t.count/totalTop*100)+'%</td><td><span class="bar"><i style="width:'+Math.round(t.count/maxTop*100)+'%"></i></span></td></tr>'}).join('')+'</table>':'<div class="hint">该区间暂无读取记录</div>';
   var colors=['#0f9d8a','#5b6cff','#f2994a','#b6c2d9','#a78bfa','#14b8a6'];var ag=s.topAgents||[];var agTotal=ag.reduce(function(sum,a){return sum+a.count},0)||1;var cursor=0;var gradientParts=ag.map(function(a,i){var from=cursor;cursor+=a.count/agTotal*360;return colors[i%colors.length]+' '+from.toFixed(1)+'deg '+cursor.toFixed(1)+'deg'});if(!gradientParts.length)gradientParts=['var(--btn) 0deg 360deg'];
@@ -1122,13 +1118,14 @@ function renderStats(s){
 }
 function agentLabel(name){if(!name)return '系统';var a=(state.agents||[]).find(function(x){return x.name===name});return (a&&a.alias)||name}
 function modeLabel(mode){return ({once:'仅本次','1h':'1 小时','24h':'24 小时','7d':'7 天',always:'永久',share:'主动分享',grant:'长期授权',share_once:'仅本次'})[mode]||mode||''}
+function channelLabel(e){var s=e&&e.source;if(s==='telegram')return 'Telegram';if(s==='ntfy')return 'ntfy';if(s==='web')return '网页';return s?String(s):'网页/其他'}
 function describeEvent(e){
   var who=agentLabel(e.agent);var name=e.name?('「'+e.name+'」'):'';var mode=modeLabel(e.mode);
   switch(e.event){
     case 'secret.read': return who+' 读取了 '+name+(mode?'（'+mode+'）':'');
     case 'request.create': return who+' 申请读取 '+name;
-    case 'request.approve': return who+' 的 '+name+' 申请已批准'+(mode?'（'+mode+'）':'');
-    case 'request.deny': return who+' 的 '+name+' 申请被拒绝';
+    case 'request.approve': return who+' 的 '+name+' 申请已批准'+(mode?'（'+mode+'）':'')+'，渠道：'+channelLabel(e);
+    case 'request.deny': return who+' 的 '+name+' 申请被拒绝，渠道：'+channelLabel(e);
     case 'secret.write': return who+' 写入/更新了 '+name;
     case 'secret.deny': return who+' 尝试读取 '+name+' 被允许列表拒绝';
     case 'agent.add': return '新增 Agent '+who;
@@ -1208,11 +1205,11 @@ function renderGrants(){var box=$('grants-box');var rows=state.grants;if(!rows.l
   var head='<table><tr><th>Agent</th><th>条目</th><th>状态</th><th>到期</th><th>读取</th><th>操作</th></tr>';
   if(group==='agent'){var groups={};list.forEach(function(g){(groups[g.agent]=groups[g.agent]||[]).push(g)});box.innerHTML=Object.keys(groups).sort().map(function(n){return '<h3 style="font-size:13px;color:var(--muted);margin:10px 0 4px">'+esc(n)+'</h3>'+head+groups[n].map(row).join('')+'</table>'}).join('');return}
   box.innerHTML=head+list.map(row).join('')+'</table>'}
-function logRow(e){var agent=esc(agentLabel(e.agent));var name=e.name?('<code>'+esc(e.name)+'</code>'):'';var extra='';if(e.mode)extra+=' '+modeLabel(e.mode);if(e.reads!==undefined)extra+=' reads='+esc(e.reads);if(e.maxReads)extra+=' max='+esc(e.maxReads);return '<tr><td>'+esc(e.time?new Date(e.time).toLocaleString('zh-CN',{hour12:false}):'')+'</td><td>'+agent+'</td><td title="'+esc(e.event||'')+'">'+esc(describeEvent(e))+'</td><td>'+name+'</td><td class="hint">'+esc(extra.trim())+'</td></tr>'}
+function logRow(e){var agent=esc(agentLabel(e.agent));var name=e.name?('<code>'+esc(e.name)+'</code>'):'';var extra='';if(e.mode)extra+=' '+modeLabel(e.mode);if(e.reads!==undefined)extra+=' reads='+esc(e.reads);if(e.maxReads)extra+=' max='+esc(e.maxReads);return '<tr><td>'+esc(e.time?new Date(e.time).toLocaleString('zh-CN',{hour12:false}):'')+'</td><td>'+agent+'</td><td title="'+esc(e.event||'')+'">'+esc(describeEvent(e))+'</td><td>'+name+'</td><td>'+esc(channelLabel(e))+'</td><td class="hint">'+esc(extra.trim())+'</td></tr>'}
 async function loadLogs(reset){try{
   var offset=reset?0:state.logs.length;var qs='?limit=100&offset='+offset+'&agent='+encodeURIComponent($('log-agent').value||'')+'&event='+encodeURIComponent($('log-event').value||'')+'&name='+encodeURIComponent($('log-name').value||'');
   var r=await api('/api/audit'+qs);state.logsTotal=r.total;state.logs=reset?r.entries:state.logs.concat(r.entries);
-  $('logs-box').innerHTML=state.logs.length?'<table><tr><th>时间</th><th>Agent</th><th>描述</th><th>密钥</th><th>详情</th></tr>'+state.logs.map(logRow).join('')+'</table>':'<div class="empty">暂无日志</div>';
+  $('logs-box').innerHTML=state.logs.length?'<table><tr><th>时间</th><th>Agent</th><th>描述</th><th>密钥</th><th>渠道</th><th>详情</th></tr>'+state.logs.map(logRow).join('')+'</table>':'<div class="empty">暂无日志</div>';
   $('logs-count').textContent='共 '+r.total+' 条，已显示 '+state.logs.length+' 条';
 }catch(e){toast('日志加载失败：'+e.message,true)}}
 function openShare(name){state.shareItem=name;var agents=state.agents.map(function(a){return '<label class="chk"><input type="checkbox" class="share-agent" value="'+esc(a.name)+'">'+esc(a.name)+'</label>'}).join('');openModal('分享「'+name+'」','<div>'+agents+'</div><div class="row" style="margin-top:10px"><label class="hint">有效时间 <select id="share-ttl"><option value="1">1 小时</option><option value="24">24 小时</option><option value="168">7 天</option><option value="0">永久</option></select></label><label class="hint">可读次数 <input id="share-reads" type="number" min="1" placeholder="不限" style="width:90px"></label><button class="primary" data-act="share-go">分享</button></div>')}
@@ -2550,28 +2547,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && decideMatch) {
       const body = form(await readBody(req))
       const decision = body.get('decision')
-      const entry = state.pending.get(decideMatch[1])
-      if (entry === undefined || entry.status !== 'pending') {
+      const outcome = decideRequest(decideMatch[1], decision, 'web')
+      if (!outcome.ok) {
         res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
-        return res.end('请求不存在或已处理')
-      }
-      if (!state.unlocked) {
-        res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
-        return res.end('请先解锁 vault')
-      }
-      if (decision === 'deny') {
-        entry.status = 'denied'
-        audit({ event: 'request.deny', agent: entry.agent, name: entry.name })
-      } else if (decision === 'once') {
-        entry.status = 'approved'
-        entry.mode = 'once'
-        audit({ event: 'request.approve', mode: 'once', agent: entry.agent, name: entry.name })
-      } else {
-        const ttl = decision === '1h' ? 3600e3 : decision === '24h' ? 86400e3 : decision === '7d' ? 7 * 86400e3 : null
-        addGrant(entry.agent, entry.name, decision, ttl)
-        entry.status = 'approved'
-        entry.mode = decision
-        audit({ event: 'request.approve', mode: decision, agent: entry.agent, name: entry.name })
+        return res.end(outcome.error)
       }
       res.writeHead(303, { location: '/' })
       res.end()
