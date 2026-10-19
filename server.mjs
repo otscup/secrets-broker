@@ -182,6 +182,7 @@ function loadConfig() {
     parsed.wxpush ??= {}
     parsed.oauthClients ??= {}
     parsed.oauthTokens ??= {}
+    parsed.agentAliases ??= {}
     parsed.port ??= 8788
     parsed.bwJs ??= BW_JS
     parsed.autoImport ??= true
@@ -733,6 +734,21 @@ async function oidcDiscovery() {
   return oidcDiscoveryCache
 }
 
+async function discoverOidcEndpoints(issuer) {
+  const normalized = String(issuer ?? '').trim().replace(/\/+$/, '')
+  if (!normalized) throw new Error('issuer is empty')
+  const response = await fetch(`${normalized}/.well-known/openid-configuration`)
+  if (!response.ok) throw new Error(`discovery failed: HTTP ${response.status}`)
+  const metadata = await response.json()
+  return {
+    authorizationEndpoint: metadata.authorization_endpoint ?? '',
+    tokenEndpoint: metadata.token_endpoint ?? '',
+    userinfoEndpoint: metadata.userinfo_endpoint ?? '',
+    jwksUri: metadata.jwks_uri ?? '',
+    scope: metadata.scopes_supported?.includes('profile') ? 'openid profile email' : 'openid',
+  }
+}
+
 function b64url(buf) {
   return Buffer.from(buf).toString('base64url')
 }
@@ -843,8 +859,14 @@ function renderStatus(){var unlocked=state.status&&state.status.unlocked;var b=$
   if(unlocked){a.innerHTML='<button data-act="lock">锁定</button><button data-act="logout">退出</button>'}
   else{a.innerHTML='<form id="unlock-form" class="inline"><input type="password" name="password" placeholder="NodeWarden 主密码" required><button class="primary">解锁</button></form><button data-act="logout">退出</button>'}
 }
-function renderPending(){var box=$('pending-box');var rows=state.pending;if(!rows.length){box.innerHTML='<div class="empty">暂无待批准请求</div>';return}
-  box.innerHTML='<table><tr><th>Agent</th><th>条目</th><th>时间</th><th>授权</th></tr>'+rows.map(function(r){var btns=[['once','仅本次'],['1h','1 小时'],['24h','24 小时'],['7d','7 天'],['always','永久']].map(function(d){return '<button class="primary" data-act="decide" data-id="'+esc(r.id)+'" data-decision="'+d[0]+'">'+d[1]+'</button>'}).join('');return '<tr><td>'+esc(r.agent)+'</td><td><code>'+esc(r.name)+'</code></td><td>'+esc(new Date(r.createdAt).toLocaleTimeString())+'</td><td>'+btns+'<button class="danger" data-act="decide" data-id="'+esc(r.id)+'" data-decision="deny">拒绝</button></td></tr>'}).join('')+'</table>'}
+let knownPending=new Set(),pendingInitialized=false;
+function renderPending(){var box=$('pending-box');var rows=state.pending;if(!rows.length){box.innerHTML='<div class="empty">暂无待批准请求</div>';knownPending=new Set();pendingInitialized=true;return}
+  box.innerHTML='<table><tr><th>Agent</th><th>条目</th><th>时间</th><th>授权</th></tr>'+rows.map(function(r){var btns=[['once','仅本次'],['1h','1 小时'],['24h','24 小时'],['7d','7 天'],['always','永久']].map(function(d){return '<button class="primary" data-act="decide" data-id="'+esc(r.id)+'" data-decision="'+d[0]+'">'+d[1]+'</button>'}).join('');return '<tr><td>'+esc(r.agent)+'</td><td><code>'+esc(r.name)+'</code></td><td>'+esc(new Date(r.createdAt).toLocaleTimeString())+'</td><td>'+btns+'<button class="danger" data-act="decide" data-id="'+esc(r.id)+'" data-decision="deny">拒绝</button></td></tr>'}).join('')+'</table>';
+  var ids=new Set(rows.map(function(r){return r.id}));if(!pendingInitialized){knownPending=ids;pendingInitialized=true}else{rows.forEach(function(r){if(!knownPending.has(r.id)){showBrowserNotification(r)}});knownPending=ids}
+}
+function showBrowserNotification(r){if(typeof Notification==='undefined'||Notification.permission!=='granted')return;try{var n=new Notification('Secrets Broker 授权请求',{body:r.agent+' 请求读取「'+r.name+'」',tag:r.id});n.onclick=function(){window.focus();location.hash='#/grants';n.close()}}catch(e){}}
+async function enableNotifications(){if(typeof Notification==='undefined'){toast('此浏览器不支持通知',true);return}var p=await Notification.requestPermission();updateNotifyPerm();if(p==='granted')toast('浏览器通知已启用');else toast('未获得通知权限',true)}
+function updateNotifyPerm(){var el=$('notify-perm');if(!el)return;el.textContent='当前权限：'+(typeof Notification==='undefined'?'不支持':Notification.permission)}
 function renderItems(){var box=$('items-box');var q=($('item-search').value||'').toLowerCase();var gf=$('group-filter')?$('group-filter').value:'';
   var items=state.items.filter(function(i){var hay=(String(i.name)+' '+String(i.url||'')).toLowerCase();return (!q||hay.indexOf(q)>=0)&&(!gf||(i.group||'')===gf)});
   if(state.status&&!state.status.unlocked){box.innerHTML='<div class="empty">解锁后显示条目</div>';return}
@@ -852,7 +874,7 @@ function renderItems(){var box=$('items-box');var q=($('item-search').value||'')
   box.innerHTML='<table><tr><th>名称</th><th>网址</th><th>分组</th><th>类型</th><th>操作</th></tr>'+items.map(function(i){return '<tr><td><code>'+esc(i.name)+'</code></td><td class="hint">'+esc(i.url||'')+'</td><td class="hint">'+esc(i.group||'')+'</td><td>'+esc(i.type)+'</td><td><button data-act="share" data-name="'+esc(i.name)+'">分享</button><button data-act="edit-item" data-name="'+esc(i.name)+'">编辑</button><button class="danger" data-act="item-delete" data-name="'+esc(i.name)+'">删除</button></td></tr>'}).join('')+'</table>';
   var gsel=$('group-filter');if(gsel){var current=gsel.value;var groups=Array.from(new Set(state.items.map(function(i){return i.group||''}))).filter(Boolean).sort();gsel.innerHTML='<option value="">全部分组</option>'+groups.map(function(g){return '<option value="'+esc(g)+'">'+esc(g)+'</option>'}).join('');gsel.value=current}}
 function renderAgents(){var box=$('agents-box');if(!state.agents.length){box.innerHTML='<div class="empty">暂无 agent</div>';return}
-  box.innerHTML='<table><tr><th>Agent</th><th>Token</th><th>可读条目</th><th>操作</th></tr>'+state.agents.map(function(a){var allow=a.allow&&a.allow.length?a.allow.join(', '):'全部';return '<tr><td>'+esc(a.name)+'</td><td><code>'+esc(a.tokenPreview||'')+'</code> <button data-act="copy" data-agent="'+esc(a.name)+'">复制</button></td><td class="hint">'+esc(allow)+'</td><td><button data-act="access" data-agent="'+esc(a.name)+'">设置可读</button><button data-act="agent-write" data-agent="'+esc(a.name)+'" data-allow="'+((state.agentWrite&&state.agentWrite[a.name])?'0':'1')+'">写入:'+((state.agentWrite&&state.agentWrite[a.name])?'开':'关')+'</button><button data-act="rotate" data-agent="'+esc(a.name)+'">轮换</button><button class="danger" data-act="agent-delete" data-agent="'+esc(a.name)+'">删除</button></td></tr>'}).join('')+'</table>'}
+  box.innerHTML='<table><tr><th>Agent</th><th>Token</th><th>可读条目</th><th>操作</th></tr>'+state.agents.map(function(a){var allow=a.allow&&a.allow.length?a.allow.join(', '):'全部';var label=a.alias||a.name;var tokenCell=a.oauth?'<code>OAuth 2.1</code>':'<code>'+esc(a.tokenPreview||'')+'</code> <button data-act="copy" data-agent="'+esc(a.name)+'">复制</button>';var ops='<button data-act="agent-alias" data-agent="'+esc(a.name)+'">改名</button>';if(!a.oauth){ops+='<button data-act="access" data-agent="'+esc(a.name)+'">设置可读</button><button data-act="agent-write" data-agent="'+esc(a.name)+'" data-allow="'+((state.agentWrite&&state.agentWrite[a.name])?'0':'1')+'">写入:'+((state.agentWrite&&state.agentWrite[a.name])?'开':'关')+'</button><button data-act="rotate" data-agent="'+esc(a.name)+'">轮换</button><button class="danger" data-act="agent-delete" data-agent="'+esc(a.name)+'">删除</button>'}return '<tr><td><b>'+esc(label)+'</b>'+(a.alias?'<br><span class="hint">'+esc(a.name)+'</span>':'')+'</td><td>'+tokenCell+'</td><td class="hint">'+esc(allow)+'</td><td>'+ops+'</td></tr>'}).join('')+'</table>'}
 function renderGrants(){var box=$('grants-box');var rows=state.grants;if(!rows.length){box.innerHTML='<div class="empty">暂无授权</div>';return}
   var sort=$('g-sort').value,group=$('g-group').value;var list=rows.slice();var key=sort==='created'?function(g){return g.createdAt?Date.parse(g.createdAt):0}:sort==='agent'?function(g){return String(g.agent).toLowerCase()}:sort==='name'?function(g){return String(g.name).toLowerCase()}:function(g){return g.expiresAt==null?Number.MAX_SAFE_INTEGER:g.expiresAt};
   list.sort(function(x,y){var a=key(x),b=key(y);return a<b?-1:a>b?1:0});
@@ -958,8 +980,7 @@ form.inline{display:inline}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:
 <div id="kpis" class="kpis"></div>
 <div class="card" style="padding:12px"><div class="row" style="justify-content:space-between;margin:0 0 6px"><b style="font-size:13px">读取趋势</b><span class="hint">每根点可悬停查看数值</span></div><div id="chart-box" class="chart"></div></div>
 <div class="charts"><div><h3 style="font-size:13px;color:var(--muted);margin:0 0 8px">条目读取排行</h3><div id="top-box"></div></div><div><h3 style="font-size:13px;color:var(--muted);margin:0 0 8px">Agent 读取占比</h3><div id="donut-box" class="donut-wrap"></div></div></div>
-<div class="hint" id="overview-info"></div></div>
-<div class="card"><h2>待批准请求</h2><div id="pending-box" class="empty">加载中…</div><div class="hint">点按钮即授权；ntfy 已推送时也可以在手机点链接。</div></div></section>
+<div class="hint" id="overview-info"></div></div></section>
 <section id="view-items" class="view"><div class="card"><h2>密钥条目</h2>
 <div class="row"><input id="item-search" placeholder="搜索名称或网址…" style="width:220px"><select id="group-filter"><option value="">全部分组</option></select><button data-act="sync-items">同步服务器</button>
 <form id="item-form" class="inline"><input name="name" placeholder="条目名" required><input name="url" placeholder="网址（可选，如 https://example.com）"><input name="group" placeholder="分组（可选）"><input type="password" name="value" placeholder="密钥值（留空不改）"><input name="notes" placeholder="备注"><button class="primary">新增 / 更新</button></form></div>
@@ -967,7 +988,7 @@ form.inline{display:inline}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:
 <section id="view-agents" class="view"><div class="card"><h2>Agents</h2>
 <div class="row"><form id="agent-form" class="inline"><input name="name" placeholder="新 agent 名（如 codex-office）" required><button class="primary">添加</button></form></div>
 <div id="agents-box" class="empty">加载中…</div></div></section>
-<section id="view-grants" class="view"><div class="card"><h2>授权与到期</h2>
+<section id="view-grants" class="view"><div class="card"><h2>待批准请求</h2><div id="pending-box" class="empty">加载中…</div><div class="hint">点按钮即授权；浏览器通知开启后，新请求会弹出系统通知。</div></div><div class="card"><h2>授权与到期</h2>
 <div class="row"><label class="hint">排序 <select id="g-sort"><option value="expiry">到期时间</option><option value="created">授权时间</option><option value="agent">Agent</option><option value="name">密钥名</option></select></label>
 <label class="hint">分组 <select id="g-group"><option value="none">不分组</option><option value="agent">按 agent</option></select></label>
 <button data-act="refresh">刷新</button></div><div id="grants-box" class="empty">加载中…</div></div></section>
@@ -975,6 +996,7 @@ form.inline{display:inline}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:
 <div class="row"><select id="log-agent"><option value="">全部 agent</option></select><input id="log-event" placeholder="事件（如 secret.read）" style="width:180px"><input id="log-name" placeholder="密钥名包含…" style="width:160px"><button data-act="logs-refresh">刷新</button></div>
 <div id="logs-box" class="empty">加载中…</div><div class="row" style="margin-top:10px"><button data-act="logs-more">加载更多</button><span id="logs-count" class="hint"></span></div></div></section>
 <section id="view-settings" class="view"><div class="card"><h2>外观</h2><label class="hint">主题 <select id="theme-select"><option value="auto">自动（跟随系统）</option><option value="light">白天</option><option value="dark">夜间</option></select></label></div>
+<div class="card"><h2>浏览器通知</h2><div class="row"><button data-act="enable-notifications">启用浏览器通知</button></div><div class="hint" id="notify-perm"></div></div>
 <div class="card"><h2>连接设置</h2>
 <form id="settings-form">
 <label class="hint">公开地址 Public URL<br><input name="publicUrl" placeholder="https://broker.example.com" style="width:100%"></label>
@@ -1050,7 +1072,7 @@ function renderStats(s){
   k.innerHTML=cards.map(function(c){return '<div class="kpi"><div class="label">'+c[0]+'</div><div class="value">'+c[1]+'</div></div>'}).join('');
   var buckets=s.buckets||[];var max=Math.max(1,...buckets.map(function(b){return b.count}));var W=600,H=180,px=38,py=18,iw=W-2*px,ih=H-2*py;var step=buckets.length>1?iw/(buckets.length-1):0;
   var pts=buckets.map(function(b,i){return [px+i*step,H-py-(b.count/max)*ih]});
-  function smooth(points){if(points.length<2)return '';var d='M'+points[0][0].toFixed(1)+','+points[0][1].toFixed(1);for(var i=0;i<points.length-1;i++){var p0=points[i-1]||points[i],p1=points[i],p2=points[i+1],p3=points[i+2]||p2;var c1x=p1[0]+(p2[0]-p0[0])/6,c1y=p1[1]+(p2[1]-p0[1])/6;var c2x=p2[0]-(p3[0]-p1[0])/6,c2y=p2[1]-(p3[1]-p1[1])/6;d+=' C'+c1x.toFixed(1)+','+c1y.toFixed(1)+' '+c2x.toFixed(1)+','+c2y.toFixed(1)+' '+p2[0].toFixed(1)+','+p2[1].toFixed(1)}return d}
+  function smooth(points){if(points.length<2)return '';var n=points.length,dx=[],dy=[],m=[],t=[];for(var i=0;i<n-1;i++){dx[i]=points[i+1][0]-points[i][0];dy[i]=points[i+1][1]-points[i][1];m[i]=dx[i]===0?0:dy[i]/dx[i]}t[0]=m[0];for(var i=1;i<n-1;i++)t[i]=(m[i-1]+m[i])/2;t[n-1]=m[n-2];for(var i=0;i<n-1;i++){if(m[i]===0){t[i]=0;t[i+1]=0}else{var a=t[i]/m[i],b=t[i+1]/m[i],s=a*a+b*b;if(s>9){var k=3/Math.sqrt(s);t[i]=k*a*m[i];t[i+1]=k*b*m[i]}}}var d='M'+points[0][0].toFixed(1)+','+points[0][1].toFixed(1);for(var i=0;i<n-1;i++){var p1=points[i],p2=points[i+1],c1x=p1[0]+dx[i]/3,c1y=p1[1]+t[i]*dx[i]/3,c2x=p2[0]-dx[i]/3,c2y=p2[1]-t[i+1]*dx[i]/3;d+=' C'+c1x.toFixed(1)+','+c1y.toFixed(1)+' '+c2x.toFixed(1)+','+c2y.toFixed(1)+' '+p2[0].toFixed(1)+','+p2[1].toFixed(1)}return d}
   var line=smooth(pts);
   var area=line+' L'+(px+(buckets.length-1)*step)+','+(H-py)+' L'+px+','+(H-py)+' Z';
   var grid='';for(var g=0;g<=4;g++){var y=py+ih*g/4;grid+='<line x1="'+px+'" y1="'+y+'" x2="'+(W-px)+'" y2="'+y+'" stroke="currentColor" stroke-opacity=".10"/>';grid+='<text x="4" y="'+(y+3)+'" fill="currentColor" font-size="9" opacity=".5">'+Math.round(max*(4-g)/4)+'</text>'}
@@ -1070,7 +1092,7 @@ async function loadStats(range){try{statsRange=range||statsRange;var s=await api
 function settingsField(name){var el=document.querySelector('[name="'+name+'"]');return el?el.value:''}
 async function loadProfile(){try{var p=await api('/api/profile');var f=$('profile-form');if(f){f.name.value=p.name||'';f.email.value=p.email||'';f.phone.value=p.phone||'';f.avatarUrl.value=p.avatarUrl||''}var ti=$('totp-info');if(ti)ti.innerHTML=p.totpEnabled?'已启用 TOTP 两步验证':'未启用';var bi=$('oidc-bind-info');if(bi)bi.innerHTML=p.oidcEnabled?(p.oidcBound?'已绑定 <code>'+esc(p.oidcIssuer||'OIDC')+'</code> · 外部标识 <code>'+esc(p.oidcSubMasked||'')+'</code>'+(p.oidcEmail?' · '+esc(p.oidcEmail):''):'未绑定。配置好 OIDC 后，点“绑定 OIDC 账号”完成关联。'):'未配置 OIDC（Settings → OIDC）';var bl=$('oidc-bind-link');if(bl)bl.style.display=p.oidcEnabled?'inline-block':'none';}catch(e){}}
 async function saveProfile(){var f=$('profile-form');try{await post('/api/profile',{name:f.name.value,email:f.email.value,phone:f.phone.value,avatarUrl:f.avatarUrl.value});toast('资料已保存');loadProfile()}catch(e){toast(e.message,true)}}
-async function loadSettings(){try{var s=await api('/api/settings');state.agentWrite=s.agentWrite||{};document.querySelectorAll('[name="publicUrl"]').forEach(function(el){el.value=s.publicUrl||''});document.querySelectorAll('[name="serverUrl"]').forEach(function(el){el.value=s.serverUrl||''});document.querySelectorAll('[name="oidcIssuer"]').forEach(function(el){el.value=s.oidc.issuer||''});document.querySelectorAll('[name="oidcClientId"]').forEach(function(el){el.value=s.oidc.clientId||''});document.querySelectorAll('[name="oidcRedirectUri"]').forEach(function(el){el.value=s.oidc.redirectUri||''});document.querySelectorAll('[name="oidcAuthorizationEndpoint"]').forEach(function(el){el.value=s.oidc.authorizationEndpoint||''});document.querySelectorAll('[name="oidcTokenEndpoint"]').forEach(function(el){el.value=s.oidc.tokenEndpoint||''});document.querySelectorAll('[name="oidcUserinfoEndpoint"]').forEach(function(el){el.value=s.oidc.userinfoEndpoint||''});document.querySelectorAll('[name="oidcJwksUri"]').forEach(function(el){el.value=s.oidc.jwksUri||''});document.querySelectorAll('[name="oidcScope"]').forEach(function(el){el.value=s.oidc.scope||''});document.querySelectorAll('[name="oidcClaimIdentifier"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.identifier)||''});document.querySelectorAll('[name="oidcClaimName"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.name)||''});document.querySelectorAll('[name="oidcClaimEmail"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.email)||''});document.querySelectorAll('[name="oidcClaimAvatar"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.avatar)||''});document.querySelectorAll('[name="telegramChatId"]').forEach(function(el){el.value=s.telegram?String(s.telegram.chatId||''):''});if(s.gotify){document.querySelectorAll('[name="gotifyUrl"]').forEach(function(el){el.value=s.gotify.url||''})}if(s.wxpush){document.querySelectorAll('[name="wxpushUrl"]').forEach(function(el){el.value=s.wxpush.url||''})}if($('ntfy-input'))$('ntfy-input').value=s.ntfyUrl||'';var si=$('settings-info');if(si)si.innerHTML='Vault：<code>'+esc(s.serverUrl||'')+'</code> · 端口 '+esc(s.port)+' · 绑定 '+esc(s.bind)+' · 自动解锁：'+(s.autoUnlock?'已启用':'未启用');var sec=$('security-info');if(sec)sec.innerHTML=s.autoUnlock?'主密码加密保存在容器卷（AES-GCM）。':'未启用自动解锁，重启后需手动输入主密码。';var nt=$('notify-info');if(nt)nt.innerHTML=s.ntfyUrl?'当前回调：<code>'+esc(s.ntfyUrl)+'</code>':'未配置 ntfy。';var tg=$('telegram-info');if(tg)tg.innerHTML=s.telegram&&s.telegram.configured?'Telegram 已配置（Chat '+esc(String(s.telegram.chatId||''))+'）':'未配置 Telegram；保存后需重启生效。';var gf=$('gotify-info');if(gf)gf.innerHTML=s.gotify&&s.gotify.configured?'Gotify 已配置：<code>'+esc(s.gotify.url||'')+'</code>':'未配置 Gotify。';var wx=$('wxpush-info');if(wx)wx.innerHTML=s.wxpush&&s.wxpush.configured?'wxpush 已配置：<code>'+esc(s.wxpush.url||'')+'</code>':'未配置 wxpush。';var si2=$('settings-info');if(si2&&s.encryptionKeyFingerprint)si2.innerHTML+='<br>加密密钥指纹：<code>'+esc(s.encryptionKeyFingerprint)+'</code>（AES-256-GCM）';}catch(e){}}
+async function loadSettings(){try{var s=await api('/api/settings');state.agentWrite=s.agentWrite||{};document.querySelectorAll('[name="publicUrl"]').forEach(function(el){el.value=s.publicUrl||''});document.querySelectorAll('[name="serverUrl"]').forEach(function(el){el.value=s.serverUrl||''});document.querySelectorAll('[name="oidcIssuer"]').forEach(function(el){el.value=s.oidc.issuer||''});document.querySelectorAll('[name="oidcClientId"]').forEach(function(el){el.value=s.oidc.clientId||''});document.querySelectorAll('[name="oidcRedirectUri"]').forEach(function(el){el.value=s.oidc.redirectUri||''});document.querySelectorAll('[name="oidcAuthorizationEndpoint"]').forEach(function(el){el.value=s.oidc.authorizationEndpoint||''});document.querySelectorAll('[name="oidcTokenEndpoint"]').forEach(function(el){el.value=s.oidc.tokenEndpoint||''});document.querySelectorAll('[name="oidcUserinfoEndpoint"]').forEach(function(el){el.value=s.oidc.userinfoEndpoint||''});document.querySelectorAll('[name="oidcJwksUri"]').forEach(function(el){el.value=s.oidc.jwksUri||''});document.querySelectorAll('[name="oidcScope"]').forEach(function(el){el.value=s.oidc.scope||''});document.querySelectorAll('[name="oidcClaimIdentifier"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.identifier)||''});document.querySelectorAll('[name="oidcClaimName"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.name)||''});document.querySelectorAll('[name="oidcClaimEmail"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.email)||''});document.querySelectorAll('[name="oidcClaimAvatar"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.avatar)||''});document.querySelectorAll('[name="telegramChatId"]').forEach(function(el){el.value=s.telegram?String(s.telegram.chatId||''):''});if(s.gotify){document.querySelectorAll('[name="gotifyUrl"]').forEach(function(el){el.value=s.gotify.url||''})}if(s.wxpush){document.querySelectorAll('[name="wxpushUrl"]').forEach(function(el){el.value=s.wxpush.url||''})}if($('ntfy-input'))$('ntfy-input').value=s.ntfyUrl||'';var si=$('settings-info');if(si)si.innerHTML='Vault：<code>'+esc(s.serverUrl||'')+'</code> · 端口 '+esc(s.port)+' · 绑定 '+esc(s.bind)+' · 自动解锁：'+(s.autoUnlock?'已启用':'未启用');var sec=$('security-info');if(sec)sec.innerHTML=s.autoUnlock?'主密码加密保存在容器卷（AES-GCM）。':'未启用自动解锁，重启后需手动输入主密码。';var nt=$('notify-info');if(nt)nt.innerHTML=s.ntfyUrl?'当前回调：<code>'+esc(s.ntfyUrl)+'</code>':'未配置 ntfy。';var tg=$('telegram-info');if(tg)tg.innerHTML=s.telegram&&s.telegram.configured?'Telegram 已配置（Chat '+esc(String(s.telegram.chatId||''))+'）':'未配置 Telegram；保存后需重启生效。';var gf=$('gotify-info');if(gf)gf.innerHTML=s.gotify&&s.gotify.configured?'Gotify 已配置：<code>'+esc(s.gotify.url||'')+'</code>':'未配置 Gotify。';var wx=$('wxpush-info');if(wx)wx.innerHTML=s.wxpush&&s.wxpush.configured?'wxpush 已配置：<code>'+esc(s.wxpush.url||'')+'</code>':'未配置 wxpush。';if(s.oidc&&s.oidc.issuer&&(!s.oidc.authorizationEndpoint||!s.oidc.tokenEndpoint)){try{var disc=await api('/api/oidc/discover?issuer='+encodeURIComponent(s.oidc.issuer));if(disc.ok){var setIfEmpty=function(name,val){document.querySelectorAll('[name="'+name+'"]').forEach(function(el){if(!el.value)el.value=val||''})};setIfEmpty('oidcAuthorizationEndpoint',disc.authorizationEndpoint);setIfEmpty('oidcTokenEndpoint',disc.tokenEndpoint);setIfEmpty('oidcUserinfoEndpoint',disc.userinfoEndpoint);setIfEmpty('oidcJwksUri',disc.jwksUri)}}catch(e){}}var si2=$('settings-info');if(si2&&s.encryptionKeyFingerprint)si2.innerHTML+='<br>加密密钥指纹：<code>'+esc(s.encryptionKeyFingerprint)+'</code>（AES-256-GCM）';}catch(e){}}
 async function saveSettings(){try{var data={publicUrl:settingsField('publicUrl'),serverUrl:settingsField('serverUrl'),oidcIssuer:settingsField('oidcIssuer'),oidcClientId:settingsField('oidcClientId'),oidcClientSecret:settingsField('oidcClientSecret'),oidcRedirectUri:settingsField('oidcRedirectUri'),oidcScope:settingsField('oidcScope'),oidcAuthorizationEndpoint:settingsField('oidcAuthorizationEndpoint'),oidcTokenEndpoint:settingsField('oidcTokenEndpoint'),oidcUserinfoEndpoint:settingsField('oidcUserinfoEndpoint'),oidcJwksUri:settingsField('oidcJwksUri'),oidcClaimIdentifier:settingsField('oidcClaimIdentifier'),oidcClaimName:settingsField('oidcClaimName'),oidcClaimEmail:settingsField('oidcClaimEmail'),oidcClaimAvatar:settingsField('oidcClaimAvatar'),ntfyUrl:$('ntfy-input')?$('ntfy-input').value:'',telegramToken:settingsField('telegramToken'),telegramChatId:settingsField('telegramChatId'),gotifyUrl:settingsField('gotifyUrl'),gotifyToken:settingsField('gotifyToken'),wxpushUrl:settingsField('wxpushUrl'),wxpushToken:settingsField('wxpushToken')};await post('/api/settings',data);toast('设置已保存');await loadSettings();await loadAll()}catch(e){toast(e.message,true)}}
 function renderInfo(){var s=state.status||{};var info=$('overview-info');if(info)info.innerHTML='Vault: <code>'+esc(s.publicUrl||'')+'</code> · OIDC 登录：'+(s.oidc?'已启用':'未启用')+' · ntfy 通知：'+(s.ntfy?'已启用':'未启用')+' · 自动解锁：'+(s.autoUnlock?'已启用':'未启用');
   var si=$('settings-info');if(si)si.innerHTML='公开地址：<code>'+esc(s.publicUrl||'')+'</code><br>OIDC：'+(s.oidc?'已启用':'未启用')+'<br>ntfy：'+(s.ntfy?'已启用':'未启用')+'<br>自动解锁：'+(s.autoUnlock?'已启用':'未启用')+'<br>Agents：'+esc((state.agents||[]).map(function(a){return a.name}).join(', '));
@@ -1078,8 +1100,14 @@ function renderInfo(){var s=state.status||{};var info=$('overview-info');if(info
   var nt=$('notify-info');if(nt)nt.innerHTML=s.ntfy?'已配置 ntfy 推送。':'未配置 ntfy。可在部署 .env 中设置 <code>NTFY_URL</code>。';
   var opts=(state.agents||[]).map(function(a){return '<option value="'+esc(a.name)+'">'+esc(a.name)+'</option>'}).join('');var la=$('log-agent');if(la&&la.options.length<=1)la.innerHTML='<option value="">全部 agent</option>'+opts;
 }
-function renderPending(){var box=$('pending-box');var rows=state.pending;if(!rows.length){box.innerHTML='<div class="empty">暂无待批准请求</div>';return}
-  box.innerHTML='<table><tr><th>Agent</th><th>条目</th><th>时间</th><th>授权</th></tr>'+rows.map(function(r){var btns=[['once','仅本次'],['1h','1 小时'],['24h','24 小时'],['7d','7 天'],['always','永久']].map(function(d){return '<button class="primary" data-act="decide" data-id="'+esc(r.id)+'" data-decision="'+d[0]+'">'+d[1]+'</button>'}).join('');return '<tr><td>'+esc(r.agent)+'</td><td><code>'+esc(r.name)+'</code></td><td>'+esc(new Date(r.createdAt).toLocaleTimeString())+'</td><td>'+btns+'<button class="danger" data-act="decide" data-id="'+esc(r.id)+'" data-decision="deny">拒绝</button></td></tr>'}).join('')+'</table>'}
+let knownPending=new Set(),pendingInitialized=false;
+function renderPending(){var box=$('pending-box');var rows=state.pending;if(!rows.length){box.innerHTML='<div class="empty">暂无待批准请求</div>';knownPending=new Set();pendingInitialized=true;return}
+  box.innerHTML='<table><tr><th>Agent</th><th>条目</th><th>时间</th><th>授权</th></tr>'+rows.map(function(r){var btns=[['once','仅本次'],['1h','1 小时'],['24h','24 小时'],['7d','7 天'],['always','永久']].map(function(d){return '<button class="primary" data-act="decide" data-id="'+esc(r.id)+'" data-decision="'+d[0]+'">'+d[1]+'</button>'}).join('');return '<tr><td>'+esc(r.agent)+'</td><td><code>'+esc(r.name)+'</code></td><td>'+esc(new Date(r.createdAt).toLocaleTimeString())+'</td><td>'+btns+'<button class="danger" data-act="decide" data-id="'+esc(r.id)+'" data-decision="deny">拒绝</button></td></tr>'}).join('')+'</table>';
+  var ids=new Set(rows.map(function(r){return r.id}));if(!pendingInitialized){knownPending=ids;pendingInitialized=true}else{rows.forEach(function(r){if(!knownPending.has(r.id)){showBrowserNotification(r)}});knownPending=ids}
+}
+function showBrowserNotification(r){if(typeof Notification==='undefined'||Notification.permission!=='granted')return;try{var n=new Notification('Secrets Broker 授权请求',{body:r.agent+' 请求读取「'+r.name+'」',tag:r.id});n.onclick=function(){window.focus();location.hash='#/grants';n.close()}}catch(e){}}
+async function enableNotifications(){if(typeof Notification==='undefined'){toast('此浏览器不支持通知',true);return}var p=await Notification.requestPermission();updateNotifyPerm();if(p==='granted')toast('浏览器通知已启用');else toast('未获得通知权限',true)}
+function updateNotifyPerm(){var el=$('notify-perm');if(!el)return;el.textContent='当前权限：'+(typeof Notification==='undefined'?'不支持':Notification.permission)}
 function renderItems(){var box=$('items-box');var q=($('item-search').value||'').toLowerCase();var gf=$('group-filter')?$('group-filter').value:'';
   var items=state.items.filter(function(i){var hay=(String(i.name)+' '+String(i.url||'')).toLowerCase();return (!q||hay.indexOf(q)>=0)&&(!gf||(i.group||'')===gf)});
   if(state.status&&!state.status.unlocked){box.innerHTML='<div class="empty">解锁后显示条目</div>';return}
@@ -1087,7 +1115,7 @@ function renderItems(){var box=$('items-box');var q=($('item-search').value||'')
   box.innerHTML='<table><tr><th>名称</th><th>网址</th><th>分组</th><th>类型</th><th>操作</th></tr>'+items.map(function(i){return '<tr><td><code>'+esc(i.name)+'</code></td><td class="hint">'+esc(i.url||'')+'</td><td class="hint">'+esc(i.group||'')+'</td><td>'+esc(i.type)+'</td><td><button data-act="share" data-name="'+esc(i.name)+'">分享</button><button data-act="edit-item" data-name="'+esc(i.name)+'">编辑</button><button class="danger" data-act="item-delete" data-name="'+esc(i.name)+'">删除</button></td></tr>'}).join('')+'</table>';
   var gsel=$('group-filter');if(gsel){var current=gsel.value;var groups=Array.from(new Set(state.items.map(function(i){return i.group||''}))).filter(Boolean).sort();gsel.innerHTML='<option value="">全部分组</option>'+groups.map(function(g){return '<option value="'+esc(g)+'">'+esc(g)+'</option>'}).join('');gsel.value=current}}
 function renderAgents(){var box=$('agents-box');if(!state.agents.length){box.innerHTML='<div class="empty">暂无 agent</div>';return}
-  box.innerHTML='<table><tr><th>Agent</th><th>Token</th><th>可读条目</th><th>操作</th></tr>'+state.agents.map(function(a){var allow=a.allow&&a.allow.length?a.allow.join(', '):'全部';return '<tr><td>'+esc(a.name)+'</td><td><code>'+esc(a.tokenPreview||'')+'</code> <button data-act="copy" data-agent="'+esc(a.name)+'">复制</button></td><td class="hint">'+esc(allow)+'</td><td><button data-act="access" data-agent="'+esc(a.name)+'">设置可读</button><button data-act="agent-write" data-agent="'+esc(a.name)+'" data-allow="'+((state.agentWrite&&state.agentWrite[a.name])?'0':'1')+'">写入:'+((state.agentWrite&&state.agentWrite[a.name])?'开':'关')+'</button><button data-act="rotate" data-agent="'+esc(a.name)+'">轮换</button><button class="danger" data-act="agent-delete" data-agent="'+esc(a.name)+'">删除</button></td></tr>'}).join('')+'</table>'}
+  box.innerHTML='<table><tr><th>Agent</th><th>Token</th><th>可读条目</th><th>操作</th></tr>'+state.agents.map(function(a){var allow=a.allow&&a.allow.length?a.allow.join(', '):'全部';var label=a.alias||a.name;var tokenCell=a.oauth?'<code>OAuth 2.1</code>':'<code>'+esc(a.tokenPreview||'')+'</code> <button data-act="copy" data-agent="'+esc(a.name)+'">复制</button>';var ops='<button data-act="agent-alias" data-agent="'+esc(a.name)+'">改名</button>';if(!a.oauth){ops+='<button data-act="access" data-agent="'+esc(a.name)+'">设置可读</button><button data-act="agent-write" data-agent="'+esc(a.name)+'" data-allow="'+((state.agentWrite&&state.agentWrite[a.name])?'0':'1')+'">写入:'+((state.agentWrite&&state.agentWrite[a.name])?'开':'关')+'</button><button data-act="rotate" data-agent="'+esc(a.name)+'">轮换</button><button class="danger" data-act="agent-delete" data-agent="'+esc(a.name)+'">删除</button>'}return '<tr><td><b>'+esc(label)+'</b>'+(a.alias?'<br><span class="hint">'+esc(a.name)+'</span>':'')+'</td><td>'+tokenCell+'</td><td class="hint">'+esc(allow)+'</td><td>'+ops+'</td></tr>'}).join('')+'</table>'}
 function renderGrants(){var box=$('grants-box');var rows=state.grants;if(!rows.length){box.innerHTML='<div class="empty">暂无授权</div>';return}
   var sort=$('g-sort').value,group=$('g-group').value;var list=rows.slice();var key=sort==='created'?function(g){return g.createdAt?Date.parse(g.createdAt):0}:sort==='agent'?function(g){return String(g.agent).toLowerCase()}:sort==='name'?function(g){return String(g.name).toLowerCase()}:function(g){return g.expiresAt==null?Number.MAX_SAFE_INTEGER:g.expiresAt};
   list.sort(function(x,y){var a=key(x),b=key(y);return a<b?-1:a>b?1:0});
@@ -1149,7 +1177,9 @@ document.addEventListener('click',async function(e){var b=e.target.closest('[dat
     else if(act==='settings-save'){await saveSettings()}
     else if(act==='settings-restart'){if(!confirm('保存并重启容器？重启后自动解锁。'))return;await saveSettings();toast('正在重启…');await post('/api/restart',{});setTimeout(function(){location.reload()},4000)}
     else if(act==='ntfy-test'){await saveSettings();var r=await post('/api/ntfy/test',{});toast(r.ok?'测试通知已发送':'发送失败：'+(r.error||''))}
+    else if(act==='enable-notifications'){await enableNotifications()}
     else if(act==='agent-write'){await post('/api/agents/write',{name:b.getAttribute('data-agent'),allow:b.getAttribute('data-allow')});await loadAll()}
+    else if(act==='agent-alias'){var ag=state.agents.find(function(x){return x.name===b.getAttribute('data-agent')});if(!ag)return;var nv=prompt('新的显示名（留空恢复原名）',ag.alias||ag.name);if(nv===null)return;await post('/api/agents/alias',{agent:ag.name,alias:nv.trim()===ag.name?'':nv.trim()});await loadAll();toast('已更新显示名')}
     else if(act==='disable-auto'){if(!confirm('删除自动解锁密码文件？删除后重启需手动解锁。'))return;await post('/api/auto-unlock/disable',{});await loadAll();toast('已删除')}
     else if(act==='modal-close'){closeModal()}
   }catch(err){toast(err.message,true)}});
@@ -1158,7 +1188,7 @@ if($('group-filter'))$('group-filter').addEventListener('change',renderItems);
 $('g-sort').addEventListener('change',renderGrants);
 $('g-group').addEventListener('change',renderGrants);
 $('theme-select').addEventListener('change',function(){applyTheme(this.value)});
-initTheme();route();loadAll();
+initTheme();route();updateNotifyPerm();loadAll();
 setInterval(function(){if(document.visibilityState==='visible')loadAll()},15000);
 </script>
 </div></body></html>`
@@ -1974,11 +2004,37 @@ const server = http.createServer(async (req, res) => {
       const tokens = loadAgentTokens()
       const agents = Object.entries(config.agents ?? {}).map(([name, token]) => ({
         name,
+        alias: config.agentAliases?.[name] ?? '',
         tokenPreview: tokens[name] ? maskToken(tokens[name]) : `sha256:${String(token).slice(7, 11)}…`,
         allow: config.agentAccess?.[name] ?? [],
         write: config.agentWrite?.[name] === true,
+        oauth: false,
       }))
-      return json(res, 200, { agents })
+      const oauthAgents = [...new Set(Object.values(config.oauthTokens ?? {}).map((token) => token.agent))]
+        .filter((agent) => typeof agent === 'string' && agent.length > 0)
+        .map((agent) => ({
+          name: agent,
+          alias: config.agentAliases?.[agent] ?? '',
+          tokenPreview: 'OAuth 2.1',
+          allow: [],
+          write: false,
+          oauth: true,
+        }))
+      return json(res, 200, { agents: [...agents, ...oauthAgents] })
+    }
+    if (req.method === 'POST' && url.pathname === '/api/agents/alias') {
+      const body = form(await readBody(req))
+      const agent = body.get('agent') ?? ''
+      if (!config.agents[agent] && !Object.values(config.oauthTokens ?? {}).some((token) => token.agent === agent)) {
+        return json(res, 404, { error: 'unknown agent' })
+      }
+      config.agentAliases ??= {}
+      const alias = (body.get('alias') ?? '').trim().slice(0, 64)
+      if (alias.length === 0) delete config.agentAliases[agent]
+      else config.agentAliases[agent] = alias
+      saveConfig()
+      audit({ event: 'agent.alias', agent, alias })
+      return json(res, 200, { agent, alias })
     }
     if (req.method === 'POST' && url.pathname === '/api/agents/token') {
       const body = form(await readBody(req))
@@ -2218,6 +2274,15 @@ const server = http.createServer(async (req, res) => {
       if (typeof body.oidcTokenEndpoint === 'string') config.oidc.tokenEndpoint = body.oidcTokenEndpoint.trim()
       if (typeof body.oidcUserinfoEndpoint === 'string') config.oidc.userinfoEndpoint = body.oidcUserinfoEndpoint.trim()
       if (typeof body.oidcJwksUri === 'string') config.oidc.jwksUri = body.oidcJwksUri.trim()
+      if (config.oidc.issuer && (!config.oidc.authorizationEndpoint || !config.oidc.tokenEndpoint)) {
+        try {
+          const discovered = await discoverOidcEndpoints(config.oidc.issuer)
+          config.oidc.authorizationEndpoint ||= discovered.authorizationEndpoint
+          config.oidc.tokenEndpoint ||= discovered.tokenEndpoint
+          config.oidc.userinfoEndpoint ||= discovered.userinfoEndpoint
+          config.oidc.jwksUri ||= discovered.jwksUri
+        } catch {}
+      }
       config.oidc.claims ??= {}
       for (const [key, field] of [
         ['identifier', 'oidcClaimIdentifier'],
@@ -2239,6 +2304,15 @@ const server = http.createServer(async (req, res) => {
       refreshRuntimeSettings()
       audit({ event: 'settings.update' })
       return json(res, 200, { ok: true, restartRequired: Boolean(body.telegramToken || body.telegramChatId) })
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/oidc/discover') {
+      const issuer = url.searchParams.get('issuer') ?? config.oidc?.issuer ?? ''
+      try {
+        return json(res, 200, { ok: true, ...(await discoverOidcEndpoints(issuer)) })
+      } catch (error) {
+        return json(res, 400, { ok: false, error: String(error?.message ?? error) })
+      }
     }
 
     if (req.method === 'GET' && url.pathname === '/api/profile') {
