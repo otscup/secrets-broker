@@ -817,7 +817,7 @@ form.inline{display:inline}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:
 <div class="row"><input name="avatarUrl" placeholder="头像 URL" style="width:100%"></div>
 <button class="primary" data-act="profile-save">保存资料</button></form><div class="hint" id="profile-info"></div></div>
 <div class="card"><h2>两步验证（TOTP）</h2><div class="hint" id="totp-info"></div><div class="row"><button data-act="totp-setup">生成 2FA 密钥</button><button class="danger" data-act="totp-disable">关闭 2FA</button></div><div id="totp-setup-box"></div></div>
-<div class="card"><h2>账号绑定</h2><div class="hint" id="oidc-bind-info"></div><div class="row"><button class="danger" data-act="oidc-unbind">解绑 OIDC</button></div></div></section>
+<div class="card"><h2>账号绑定</h2><div class="hint" id="oidc-bind-info"></div><div class="row" style="margin-top:8px"><a class="btn" id="oidc-bind-link" href="/oidc/login?bind=1" style="display:none;padding:6px 10px;border:1px solid var(--line);border-radius:8px;color:var(--text);text-decoration:none;font-size:12px">绑定 OIDC 账号</a><button class="danger" data-act="oidc-unbind">解绑 OIDC</button></div></div></section>
 <div id="modal" class="modal"><div class="modal-card"><div class="row" style="justify-content:space-between"><b id="modal-title"></b><button data-act="modal-close">关闭</button></div><div id="modal-body"></div></div></div>
 <div id="toast" class="toast"></div>
 <script>
@@ -1014,7 +1014,7 @@ form.inline{display:inline}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:
 <div class="row"><input name="avatarUrl" placeholder="头像 URL" style="width:100%"></div>
 <button class="primary" data-act="profile-save">保存资料</button></form><div class="hint" id="profile-info"></div></div>
 <div class="card"><h2>两步验证（TOTP）</h2><div class="hint" id="totp-info"></div><div class="row"><button data-act="totp-setup">生成 2FA 密钥</button><button class="danger" data-act="totp-disable">关闭 2FA</button></div><div id="totp-setup-box"></div></div>
-<div class="card"><h2>账号绑定</h2><div class="hint" id="oidc-bind-info"></div><div class="row"><button class="danger" data-act="oidc-unbind">解绑 OIDC</button></div></div></section>
+<div class="card"><h2>账号绑定</h2><div class="hint" id="oidc-bind-info"></div><div class="row" style="margin-top:8px"><a class="btn" id="oidc-bind-link" href="/oidc/login?bind=1" style="display:none;padding:6px 10px;border:1px solid var(--line);border-radius:8px;color:var(--text);text-decoration:none;font-size:12px">绑定 OIDC 账号</a><button class="danger" data-act="oidc-unbind">解绑 OIDC</button></div></div></section>
 <div id="modal" class="modal"><div class="modal-card"><div class="row" style="justify-content:space-between"><b id="modal-title"></b><button data-act="modal-close">关闭</button></div><div id="modal-body"></div></div></div>
 <div id="toast" class="toast"></div>
 <script data-cfasync="false">
@@ -1068,7 +1068,7 @@ function renderStats(s){
 async function loadRecent(){try{var r=await api('/api/audit?limit=8');var box=$('recent-box');if(box)box.innerHTML=r.entries.map(function(e){return '<div><b>'+esc(e.event||'')+'</b> '+(e.agent?esc(e.agent):'')+(e.name?' <code>'+esc(e.name)+'</code>':'')+' <span class="hint">'+esc(e.time?new Date(e.time).toLocaleTimeString('zh-CN',{hour12:false}):'')+'</span></div>'}).join('')}catch(e){}}
 async function loadStats(range){try{statsRange=range||statsRange;var s=await api('/api/stats?range='+encodeURIComponent(statsRange));renderStats(s);loadRecent();document.querySelectorAll('[data-act="stats-range"]').forEach(function(b){b.className=b.getAttribute('data-range')===statsRange?'primary':''})}catch(e){toast('统计加载失败：'+e.message,true)}}
 function settingsField(name){var el=document.querySelector('[name="'+name+'"]');return el?el.value:''}
-async function loadProfile(){try{var p=await api('/api/profile');var f=$('profile-form');if(f){f.name.value=p.name||'';f.email.value=p.email||'';f.phone.value=p.phone||'';f.avatarUrl.value=p.avatarUrl||''}var ti=$('totp-info');if(ti)ti.innerHTML=p.totpEnabled?'已启用 TOTP 两步验证':'未启用';var bi=$('oidc-bind-info');if(bi)bi.innerHTML=p.oidcBound?'已绑定 OIDC'+(p.oidcEmail?'（'+esc(p.oidcEmail)+'）':''):'未绑定 OIDC（下次用 OIDC 登录会自动绑定）';}catch(e){}}
+async function loadProfile(){try{var p=await api('/api/profile');var f=$('profile-form');if(f){f.name.value=p.name||'';f.email.value=p.email||'';f.phone.value=p.phone||'';f.avatarUrl.value=p.avatarUrl||''}var ti=$('totp-info');if(ti)ti.innerHTML=p.totpEnabled?'已启用 TOTP 两步验证':'未启用';var bi=$('oidc-bind-info');if(bi)bi.innerHTML=p.oidcEnabled?(p.oidcBound?'已绑定 <code>'+esc(p.oidcIssuer||'OIDC')+'</code> · 外部标识 <code>'+esc(p.oidcSubMasked||'')+'</code>'+(p.oidcEmail?' · '+esc(p.oidcEmail):''):'未绑定。配置好 OIDC 后，点“绑定 OIDC 账号”完成关联。'):'未配置 OIDC（Settings → OIDC）';var bl=$('oidc-bind-link');if(bl)bl.style.display=p.oidcEnabled?'inline-block':'none';}catch(e){}}
 async function saveProfile(){var f=$('profile-form');try{await post('/api/profile',{name:f.name.value,email:f.email.value,phone:f.phone.value,avatarUrl:f.avatarUrl.value});toast('资料已保存');loadProfile()}catch(e){toast(e.message,true)}}
 async function loadSettings(){try{var s=await api('/api/settings');state.agentWrite=s.agentWrite||{};document.querySelectorAll('[name="publicUrl"]').forEach(function(el){el.value=s.publicUrl||''});document.querySelectorAll('[name="serverUrl"]').forEach(function(el){el.value=s.serverUrl||''});document.querySelectorAll('[name="oidcIssuer"]').forEach(function(el){el.value=s.oidc.issuer||''});document.querySelectorAll('[name="oidcClientId"]').forEach(function(el){el.value=s.oidc.clientId||''});document.querySelectorAll('[name="oidcRedirectUri"]').forEach(function(el){el.value=s.oidc.redirectUri||''});document.querySelectorAll('[name="oidcAuthorizationEndpoint"]').forEach(function(el){el.value=s.oidc.authorizationEndpoint||''});document.querySelectorAll('[name="oidcTokenEndpoint"]').forEach(function(el){el.value=s.oidc.tokenEndpoint||''});document.querySelectorAll('[name="oidcUserinfoEndpoint"]').forEach(function(el){el.value=s.oidc.userinfoEndpoint||''});document.querySelectorAll('[name="oidcJwksUri"]').forEach(function(el){el.value=s.oidc.jwksUri||''});document.querySelectorAll('[name="oidcScope"]').forEach(function(el){el.value=s.oidc.scope||''});document.querySelectorAll('[name="oidcClaimIdentifier"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.identifier)||''});document.querySelectorAll('[name="oidcClaimName"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.name)||''});document.querySelectorAll('[name="oidcClaimEmail"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.email)||''});document.querySelectorAll('[name="oidcClaimAvatar"]').forEach(function(el){el.value=(s.oidc.claims&&s.oidc.claims.avatar)||''});document.querySelectorAll('[name="telegramChatId"]').forEach(function(el){el.value=s.telegram?String(s.telegram.chatId||''):''});if(s.gotify){document.querySelectorAll('[name="gotifyUrl"]').forEach(function(el){el.value=s.gotify.url||''})}if(s.wxpush){document.querySelectorAll('[name="wxpushUrl"]').forEach(function(el){el.value=s.wxpush.url||''})}if($('ntfy-input'))$('ntfy-input').value=s.ntfyUrl||'';var si=$('settings-info');if(si)si.innerHTML='Vault：<code>'+esc(s.serverUrl||'')+'</code> · 端口 '+esc(s.port)+' · 绑定 '+esc(s.bind)+' · 自动解锁：'+(s.autoUnlock?'已启用':'未启用');var sec=$('security-info');if(sec)sec.innerHTML=s.autoUnlock?'主密码加密保存在容器卷（AES-GCM）。':'未启用自动解锁，重启后需手动输入主密码。';var nt=$('notify-info');if(nt)nt.innerHTML=s.ntfyUrl?'当前回调：<code>'+esc(s.ntfyUrl)+'</code>':'未配置 ntfy。';var tg=$('telegram-info');if(tg)tg.innerHTML=s.telegram&&s.telegram.configured?'Telegram 已配置（Chat '+esc(String(s.telegram.chatId||''))+'）':'未配置 Telegram；保存后需重启生效。';var gf=$('gotify-info');if(gf)gf.innerHTML=s.gotify&&s.gotify.configured?'Gotify 已配置：<code>'+esc(s.gotify.url||'')+'</code>':'未配置 Gotify。';var wx=$('wxpush-info');if(wx)wx.innerHTML=s.wxpush&&s.wxpush.configured?'wxpush 已配置：<code>'+esc(s.wxpush.url||'')+'</code>':'未配置 wxpush。';var si2=$('settings-info');if(si2&&s.encryptionKeyFingerprint)si2.innerHTML+='<br>加密密钥指纹：<code>'+esc(s.encryptionKeyFingerprint)+'</code>（AES-256-GCM）';}catch(e){}}
 async function saveSettings(){try{var data={publicUrl:settingsField('publicUrl'),serverUrl:settingsField('serverUrl'),oidcIssuer:settingsField('oidcIssuer'),oidcClientId:settingsField('oidcClientId'),oidcClientSecret:settingsField('oidcClientSecret'),oidcRedirectUri:settingsField('oidcRedirectUri'),oidcScope:settingsField('oidcScope'),oidcAuthorizationEndpoint:settingsField('oidcAuthorizationEndpoint'),oidcTokenEndpoint:settingsField('oidcTokenEndpoint'),oidcUserinfoEndpoint:settingsField('oidcUserinfoEndpoint'),oidcJwksUri:settingsField('oidcJwksUri'),oidcClaimIdentifier:settingsField('oidcClaimIdentifier'),oidcClaimName:settingsField('oidcClaimName'),oidcClaimEmail:settingsField('oidcClaimEmail'),oidcClaimAvatar:settingsField('oidcClaimAvatar'),ntfyUrl:$('ntfy-input')?$('ntfy-input').value:'',telegramToken:settingsField('telegramToken'),telegramChatId:settingsField('telegramChatId'),gotifyUrl:settingsField('gotifyUrl'),gotifyToken:settingsField('gotifyToken'),wxpushUrl:settingsField('wxpushUrl'),wxpushToken:settingsField('wxpushToken')};await post('/api/settings',data);toast('设置已保存');await loadSettings();await loadAll()}catch(e){toast(e.message,true)}}
@@ -1661,6 +1661,7 @@ const server = http.createServer(async (req, res) => {
       if (!OIDC_ENABLED) throw new Error('OIDC is not configured')
       const discovery = await oidcDiscovery()
       if (url.pathname === '/oidc/login') {
+        const bind = url.searchParams.get('bind') === '1'
         const state = randomUrlSafe(24)
         const nonce = randomUrlSafe(24)
         const verifier = randomUrlSafe(48)
@@ -1680,6 +1681,7 @@ const server = http.createServer(async (req, res) => {
             `broker_oidc_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`,
             `broker_oidc_nonce=${nonce}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`,
             `broker_oidc_verifier=${verifier}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`,
+            `broker_oidc_bind=${bind ? '1' : '0'}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`,
           ],
         })
         return res.end()
@@ -1713,23 +1715,25 @@ const server = http.createServer(async (req, res) => {
       const mappedName = claims[claimMap.name ?? 'name'] ?? claims.name ?? ''
       const mappedAvatar = claims[claimMap.avatar ?? 'picture'] ?? claims.picture ?? ''
       if (!config.profile) config.profile = {}
-      if (!config.profile.oidcSub) {
+      const bindRequested = jar.broker_oidc_bind === '1'
+      if (bindRequested || !config.profile.oidcSub) {
         config.profile.oidcSub = String(identifier ?? '')
         config.profile.oidcEmail = mappedEmail
         if (!config.profile.email && mappedEmail) config.profile.email = mappedEmail
         if (!config.profile.name && mappedName) config.profile.name = mappedName
         if (!config.profile.avatarUrl && mappedAvatar) config.profile.avatarUrl = mappedAvatar
         saveConfig()
-        audit({ event: 'profile.oidc-bind', sub: identifier, email: mappedEmail })
+        audit({ event: 'profile.oidc-bind', sub: identifier, email: mappedEmail, explicit: bindRequested })
       }
       audit({ event: 'admin.oidc-login', sub: identifier, email: mappedEmail })
       res.writeHead(302, {
-        location: '/',
+        location: jar.broker_oidc_bind === '1' ? '/#/profile' : '/',
         'set-cookie': [
           `broker_admin=${adminCookieValue()}; HttpOnly; SameSite=Lax; Path=/`,
           'broker_oidc_state=; Max-Age=0; Path=/',
           'broker_oidc_nonce=; Max-Age=0; Path=/',
           'broker_oidc_verifier=; Max-Age=0; Path=/',
+          'broker_oidc_bind=; Max-Age=0; Path=/',
         ],
       })
       return res.end()
@@ -2246,6 +2250,9 @@ const server = http.createServer(async (req, res) => {
         totpEnabled: config.profile?.totpEnabled === true,
         oidcBound: Boolean(config.profile?.oidcSub),
         oidcEmail: config.profile?.oidcEmail ?? '',
+        oidcEnabled: OIDC_ENABLED,
+        oidcIssuer: OIDC_ISSUER,
+        oidcSubMasked: config.profile?.oidcSub ? `${String(config.profile.oidcSub).slice(0, 6)}…${String(config.profile.oidcSub).slice(-4)}` : '',
       })
     }
     if (req.method === 'POST' && url.pathname === '/api/profile') {
