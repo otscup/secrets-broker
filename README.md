@@ -1,5 +1,9 @@
 # Secrets Broker
 
+[![CI](https://github.com/otscup/secrets-broker/actions/workflows/ci.yml/badge.svg)](https://github.com/otscup/secrets-broker/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](package.json)
+
 A small, self-hosted **secrets broker for AI agents**. It stores credentials in any
 Bitwarden-compatible vault (NodeWarden, Vaultwarden, Bitwarden), and gives agents a
 narrow API/MCP surface with per-agent tokens, explicit approvals, short-lived grants,
@@ -52,11 +56,25 @@ adds the missing agent-facing control plane.
 ## Quick start (Docker)
 
 ```bash
-git clone https://github.com/<you>/secrets-broker.git
+git clone https://github.com/otscup/secrets-broker.git
 cd secrets-broker
+./deploy/install.sh
+```
+
+The installer asks for the vault URL, API key, admin password and public URL,
+writes `deploy/.env`, then runs `docker compose up -d --build`.
+
+The Docker image installs `@bitwarden/cli` inside the container — you do **not**
+need `bw` on the host and nothing is installed outside Docker. The image is
+larger (Node base + Bitwarden CLI), but there is only one container and one
+volume.
+
+Manual path:
+
+```bash
 cp deploy/.env.example deploy/.env
-# edit deploy/.env: vault URL, API key, admin password, public URL
-docker compose -f deploy/docker-compose.yml up -d --build
+# edit deploy/.env
+docker compose up -d --build
 ```
 
 Open `http://<host>:8788/`, log in with `SECRETS_BROKER_ADMIN_PASSWORD`, then enter
@@ -178,15 +196,25 @@ Main environment variables:
 Most other settings (vault URL, OIDC, notification providers, public URL) can be
 edited in the UI and are persisted to `config.json`.
 
+## Documentation
+
+- [Getting started](docs/getting-started.md)
+- [Configuration](docs/configuration.md)
+- [MCP](docs/mcp.md)
+- [Notifications](docs/notifications.md)
+- [Security](docs/security.md)
+
 ## Repository layout
 
 ```
 server.mjs            broker + dashboard + HTTP/MCP/OAuth server
 mcp-server.mjs        stdio MCP adapter
 wh.mjs                CLI helper (get / run --var)
-deploy/Dockerfile     container image
-deploy/docker-compose.yml
+docker-compose.yml    one-command Docker deployment
+deploy/Dockerfile     container image (includes @bitwarden/cli)
+deploy/install.sh     interactive installer
 deploy/.env.example
+docs/                 English documentation
 ```
 
 ## License

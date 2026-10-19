@@ -1,0 +1,15 @@
+services:
+  secrets-broker:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    container_name: secrets-broker
+    restart: unless-stopped
+    ports:
+      - "8788:8788"
+    volumes:
+      - ./data:/data
+    env_file:
+      - deploy/.env
+    environment:
+      - TZ=UTC
