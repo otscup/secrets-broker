@@ -1,0 +1,14 @@
+node_modules/
+data/
+deploy/data/
+deploy/.env
+.env
+config.json
+grants.json
+audit.log
+agent-tokens.json
+encryption.key
+master-password
+*.log
+.DS_Store
+Thumbs.db

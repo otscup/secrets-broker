@@ -1,0 +1,18 @@
+﻿services:
+  secrets-broker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: secrets-broker
+    restart: unless-stopped
+    ports:
+      # Bind to a private interface when possible (Tailscale/WireGuard/LAN).
+      # Never publish this to the public internet directly.
+      - "8788:8788"
+    volumes:
+      - ./data:/data
+    env_file:
+      - .env
+    environment:
+      - TZ=UTC
+
