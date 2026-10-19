@@ -991,6 +991,12 @@ form.inline{display:inline}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:
 .rank-table td,.rank-table th{padding:8px 8px;font-size:12.5px}
 .bar{height:6px;background:var(--btn);border-radius:99px;overflow:hidden;width:90px;display:inline-block;vertical-align:middle}
 .bar i{display:block;height:100%;background:var(--ok);border-radius:99px}
+/* table behaviour adapted from gpt-load DataTable: scroll container, sticky header, hover rows */
+#top-box,#items-box,#agents-box,#grants-box,#logs-box,#pending-box{overflow-x:auto;max-width:100%}
+#top-box table{min-width:680px}
+table th{position:sticky;top:0;background:var(--card);z-index:1}
+tbody tr:hover td{background:var(--hover)}
+@media(max-width:760px){.rank-table th:nth-child(3),.rank-table td:nth-child(3),.rank-table th:nth-child(6),.rank-table td:nth-child(6){display:none}}
 .recent .ev{color:var(--muted);white-space:nowrap;margin-right:8px}
 .recent .rowline{display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12px}
 .recent .rowline:last-child{border-bottom:0}
