@@ -1100,7 +1100,7 @@ function renderStats(s){
   var buckets=s.buckets||[];var max=Math.max(1,...buckets.map(function(b){return b.count}));var W=600,H=180,px=38,py=18,iw=W-2*px,ih=H-2*py;var step=buckets.length>1?iw/(buckets.length-1):0;
   var pts=buckets.map(function(b,i){return [px+i*step,H-py-(b.count/max)*ih]});
   function smooth(points){if(points.length<2)return '';var n=points.length,dx=[],dy=[],m=[],t=[];for(var i=0;i<n-1;i++){dx[i]=points[i+1][0]-points[i][0];dy[i]=points[i+1][1]-points[i][1];m[i]=dx[i]===0?0:dy[i]/dx[i]}t[0]=m[0];for(var i=1;i<n-1;i++)t[i]=(m[i-1]+m[i])/2;t[n-1]=m[n-2];for(var i=0;i<n-1;i++){if(m[i]===0){t[i]=0;t[i+1]=0}else{var a=t[i]/m[i],b=t[i+1]/m[i],s=a*a+b*b;if(s>9){var k=3/Math.sqrt(s);t[i]=k*a*m[i];t[i+1]=k*b*m[i]}}}var d='M'+points[0][0].toFixed(1)+','+points[0][1].toFixed(1);for(var i=0;i<n-1;i++){var p1=points[i],p2=points[i+1],c1x=p1[0]+dx[i]/3,c1y=p1[1]+t[i]*dx[i]/3,c2x=p2[0]-dx[i]/3,c2y=p2[1]-t[i+1]*dx[i]/3;d+=' C'+c1x.toFixed(1)+','+c1y.toFixed(1)+' '+c2x.toFixed(1)+','+c2y.toFixed(1)+' '+p2[0].toFixed(1)+','+p2[1].toFixed(1)}return d}
-  var line=smooth(pts);
+  var line=pts.map(function(p,i){return (i?'L':'M')+p[0].toFixed(1)+','+p[1].toFixed(1)}).join(' ');
   var area=line+' L'+(px+(buckets.length-1)*step)+','+(H-py)+' L'+px+','+(H-py)+' Z';
   var grid='';for(var g=0;g<=4;g++){var y=py+ih*g/4;grid+='<line x1="'+px+'" y1="'+y+'" x2="'+(W-px)+'" y2="'+y+'" stroke="currentColor" stroke-opacity=".10"/>';grid+='<text x="4" y="'+(y+3)+'" fill="currentColor" font-size="9" opacity=".5">'+Math.round(max*(4-g)/4)+'</text>'}
   var labelIdx=[];for(var k=0;k<6;k++){var idx=Math.round(k*(buckets.length-1)/5);if(idx>=0&&labelIdx.indexOf(idx)<0)labelIdx.push(idx)}
@@ -1114,7 +1114,56 @@ function renderStats(s){
   var info=$('overview-info');if(info)info.innerHTML='';
   var updated=$('overview-updated');if(updated)updated.textContent='最后更新 '+new Date().toLocaleTimeString('zh-CN',{hour12:false})+' · 数据来自审计日志';
 }
-async function loadRecent(){try{var r=await api('/api/audit?limit=8');var box=$('recent-box');if(box)box.innerHTML=r.entries.map(function(e){return '<div class="rowline"><span class="ev">'+esc(e.time?new Date(e.time).toLocaleTimeString('zh-CN',{hour12:false}):'')+'</span><b>'+esc(e.event||'')+'</b><span>'+(e.agent?esc(e.agent):'')+'</span>'+(e.name?'<code>'+esc(e.name)+'</code>':'')+'</div>'}).join('')}catch(e){}}
+function agentLabel(name){if(!name)return '系统';var a=(state.agents||[]).find(function(x){return x.name===name});return (a&&a.alias)||name}
+function modeLabel(mode){return ({once:'仅本次','1h':'1 小时','24h':'24 小时','7d':'7 天',always:'永久',share:'主动分享',grant:'长期授权',share_once:'仅本次'})[mode]||mode||''}
+function describeEvent(e){
+  var who=agentLabel(e.agent);var name=e.name?('「'+e.name+'」'):'';var mode=modeLabel(e.mode);
+  switch(e.event){
+    case 'secret.read': return who+' 读取了 '+name+(mode?'（'+mode+'）':'');
+    case 'request.create': return who+' 申请读取 '+name;
+    case 'request.approve': return who+' 的 '+name+' 申请已批准'+(mode?'（'+mode+'）':'');
+    case 'request.deny': return who+' 的 '+name+' 申请被拒绝';
+    case 'secret.write': return who+' 写入/更新了 '+name;
+    case 'secret.deny': return who+' 尝试读取 '+name+' 被允许列表拒绝';
+    case 'agent.add': return '新增 Agent '+who;
+    case 'agent.rotate': return '轮换了 Agent '+who+' 的 token';
+    case 'agent.delete': return '删除了 Agent '+who;
+    case 'agent.alias': return '把 Agent '+who+' 改名为 '+(e.alias||'(原名)');
+    case 'agent.access': return '修改了 Agent '+who+' 的可读条目';
+    case 'agent.write-access': return '修改了 Agent '+who+' 的写入权限';
+    case 'item.create': return '新增密钥 '+name;
+    case 'item.update': return '更新密钥 '+name;
+    case 'item.delete': return '删除密钥 '+name;
+    case 'grant.share': return '主动分享 '+name+' 给 '+who;
+    case 'grant.extend': return '延长了 '+who+' 对 '+name+' 的授权';
+    case 'grant.revoke': return '撤销了 '+who+' 对 '+name+' 的授权';
+    case 'grant.restore': return '恢复/重新授权 '+who+' 读取 '+name;
+    case 'grant.set-expiry': return '修改了 '+who+' 对 '+name+' 的到期时间';
+    case 'grant.delete': return '删除了 '+who+' 对 '+name+' 的授权记录';
+    case 'unlock': return '解锁了 vault';
+    case 'lock': return '锁定了 vault';
+    case 'auto-unlock.disable': return '关闭了自动解锁（删除主密码文件）';
+    case 'admin.oidc-login': return '通过 OIDC 登录管理页'+(e.email?'（'+e.email+'）':'');
+    case 'admin.login-fail': return '管理页登录失败（IP '+(e.ip||'')+'）';
+    case 'admin.login-blocked': return '管理页登录被限速封锁（IP '+(e.ip||'')+'）';
+    case 'oauth.client-register': return '注册 OAuth 客户端 '+(e.clientName||e.clientId||'');
+    case 'oauth.authorize': return '在浏览器中授权了 OAuth 客户端';
+    case 'oauth.token-issue': return '签发 OAuth access token 给 '+who;
+    case 'profile.update': return '更新了个人资料';
+    case 'profile.oidc-bind': return '绑定了 OIDC 账号'+(e.email?'（'+e.email+'）':'');
+    case 'profile.oidc-unbind': return '解绑了 OIDC 账号';
+    case 'profile.2fa-enable': return '启用了两步验证';
+    case 'profile.2fa-disable': return '关闭了两步验证';
+    case 'settings.update': return '更新了系统设置';
+    case 'import.local': return '从本机导入密钥'+(e.created?'：'+e.created.join('、'):'');
+    case 'mcp.call': return who+' 调用 MCP 工具 '+(e.tool||'')+(name?' 操作 '+name:'');
+    case 'agent.token-reveal': return '查看/复制了 Agent '+who+' 的 token';
+    case 'telegram.bind': return '绑定了 Telegram 通知';
+    case 'server.restart': return '重启了 broker 服务';
+    default: return (e.event||'事件')+(e.agent?' · '+who:'')+(name?' '+name:'');
+  }
+}
+async function loadRecent(){try{var r=await api('/api/audit?limit=8');var box=$('recent-box');if(box)box.innerHTML=r.entries.map(function(e){return '<div class="rowline"><span class="ev">'+esc(e.time?new Date(e.time).toLocaleTimeString('zh-CN',{hour12:false}):'')+'</span><span>'+esc(describeEvent(e))+'</span></div>'}).join('')}catch(e){}}
 async function loadStats(range){try{statsRange=range||statsRange;var s=await api('/api/stats?range='+encodeURIComponent(statsRange));renderStats(s);loadRecent();document.querySelectorAll('[data-act="stats-range"]').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-range')===statsRange)})}catch(e){toast('统计加载失败：'+e.message,true)}}
 function renderHeaderUser(){var p=state.profile||{};var el=$('header-user');if(!el)return;var label=p.name||p.email||'admin';var initials=String(label).slice(0,2).toUpperCase();var avatar=p.avatarUrl?'<div class="avatar"><img src="'+esc(p.avatarUrl)+'" alt=""></div>':'<div class="avatar">'+esc(initials)+'</div>';el.innerHTML='<span>'+esc(p.email||'')+'</span>'+avatar}
 function settingsField(name){var el=document.querySelector('[name="'+name+'"]');return el?el.value:''}
@@ -1153,11 +1202,11 @@ function renderGrants(){var box=$('grants-box');var rows=state.grants;if(!rows.l
   var head='<table><tr><th>Agent</th><th>条目</th><th>状态</th><th>到期</th><th>读取</th><th>操作</th></tr>';
   if(group==='agent'){var groups={};list.forEach(function(g){(groups[g.agent]=groups[g.agent]||[]).push(g)});box.innerHTML=Object.keys(groups).sort().map(function(n){return '<h3 style="font-size:13px;color:var(--muted);margin:10px 0 4px">'+esc(n)+'</h3>'+head+groups[n].map(row).join('')+'</table>'}).join('');return}
   box.innerHTML=head+list.map(row).join('')+'</table>'}
-function logRow(e){var event=esc(e.event||'');var agent=esc(e.agent||'');var name=e.name?('<code>'+esc(e.name)+'</code>'):'';var extra='';if(e.mode)extra+=' mode='+esc(e.mode);if(e.reads!==undefined)extra+=' reads='+esc(e.reads);if(e.maxReads)extra+=' max='+esc(e.maxReads);return '<tr><td>'+esc(e.time?new Date(e.time).toLocaleString('zh-CN',{hour12:false}):'')+'</td><td>'+agent+'</td><td>'+event+'</td><td>'+name+'</td><td class="hint">'+esc(extra.trim())+'</td></tr>'}
+function logRow(e){var agent=esc(agentLabel(e.agent));var name=e.name?('<code>'+esc(e.name)+'</code>'):'';var extra='';if(e.mode)extra+=' '+modeLabel(e.mode);if(e.reads!==undefined)extra+=' reads='+esc(e.reads);if(e.maxReads)extra+=' max='+esc(e.maxReads);return '<tr><td>'+esc(e.time?new Date(e.time).toLocaleString('zh-CN',{hour12:false}):'')+'</td><td>'+agent+'</td><td title="'+esc(e.event||'')+'">'+esc(describeEvent(e))+'</td><td>'+name+'</td><td class="hint">'+esc(extra.trim())+'</td></tr>'}
 async function loadLogs(reset){try{
   var offset=reset?0:state.logs.length;var qs='?limit=100&offset='+offset+'&agent='+encodeURIComponent($('log-agent').value||'')+'&event='+encodeURIComponent($('log-event').value||'')+'&name='+encodeURIComponent($('log-name').value||'');
   var r=await api('/api/audit'+qs);state.logsTotal=r.total;state.logs=reset?r.entries:state.logs.concat(r.entries);
-  $('logs-box').innerHTML=state.logs.length?'<table><tr><th>时间</th><th>Agent</th><th>事件</th><th>密钥</th><th>详情</th></tr>'+state.logs.map(logRow).join('')+'</table>':'<div class="empty">暂无日志</div>';
+  $('logs-box').innerHTML=state.logs.length?'<table><tr><th>时间</th><th>Agent</th><th>描述</th><th>密钥</th><th>详情</th></tr>'+state.logs.map(logRow).join('')+'</table>':'<div class="empty">暂无日志</div>';
   $('logs-count').textContent='共 '+r.total+' 条，已显示 '+state.logs.length+' 条';
 }catch(e){toast('日志加载失败：'+e.message,true)}}
 function openShare(name){state.shareItem=name;var agents=state.agents.map(function(a){return '<label class="chk"><input type="checkbox" class="share-agent" value="'+esc(a.name)+'">'+esc(a.name)+'</label>'}).join('');openModal('分享「'+name+'」','<div>'+agents+'</div><div class="row" style="margin-top:10px"><label class="hint">有效时间 <select id="share-ttl"><option value="1">1 小时</option><option value="24">24 小时</option><option value="168">7 天</option><option value="0">永久</option></select></label><label class="hint">可读次数 <input id="share-reads" type="number" min="1" placeholder="不限" style="width:90px"></label><button class="primary" data-act="share-go">分享</button></div>')}
