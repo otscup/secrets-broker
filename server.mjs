@@ -176,6 +176,7 @@ function loadConfig() {
     parsed.agentAccess ??= {}
     parsed.agentWrite ??= {}
     parsed.itemGroups ??= {}
+    parsed.noApprovalItems ??= {}
     parsed.profile ??= { name: '', email: '', phone: '', avatarUrl: '', oidcSub: '', oidcEmail: '', totpSecret: '', totpEnabled: false }
     parsed.telegram ??= {}
     parsed.gotify ??= {}
@@ -821,7 +822,7 @@ form.inline{display:inline}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:
 <div id="grants-box" class="empty">加载中…</div></div>
 <div class="card"><h2>密钥条目</h2>
 <div class="row"><input id="item-search" placeholder="搜索名称或网址…" style="width:220px"><select id="group-filter"><option value="">全部分组</option></select><button data-act="sync-items">同步服务器</button>
-<form id="item-form" class="inline"><input name="name" placeholder="条目名" required><input name="url" placeholder="网址（可选，如 https://example.com）"><input name="group" placeholder="分组（可选）"><input type="password" name="value" placeholder="密钥值（留空不改）"><input name="notes" placeholder="备注"><button class="primary">新增 / 更新</button></form></div>
+<form id="item-form" class="inline"><input name="name" placeholder="条目名" required><input name="url" placeholder="网址（可选，如 https://example.com）"><input name="group" placeholder="分组（可选）"><input type="password" name="value" placeholder="密钥值（留空不改）"><input name="notes" placeholder="备注"><label class="chk"><input type="checkbox" name="noApproval" value="1"> 免审批</label><button class="primary">新增 / 更新</button></form></div>
 <div id="items-box" class="empty">加载中…</div></div>
 <div class="card"><h2>Agents</h2>
 <div class="row"><form id="agent-form" class="inline"><input name="name" placeholder="新 agent 名（如 codex-office）" required><button class="primary">添加</button></form></div>
@@ -871,7 +872,7 @@ function renderItems(){var box=$('items-box');var q=($('item-search').value||'')
   var items=state.items.filter(function(i){var hay=(String(i.name)+' '+String(i.url||'')).toLowerCase();return (!q||hay.indexOf(q)>=0)&&(!gf||(i.group||'')===gf)});
   if(state.status&&!state.status.unlocked){box.innerHTML='<div class="empty">解锁后显示条目</div>';return}
   if(!items.length){box.innerHTML='<div class="empty">'+(q||gf?'没有匹配的条目':'暂无条目')+'</div>';return}
-  box.innerHTML='<table><tr><th>名称</th><th>网址</th><th>分组</th><th>类型</th><th>操作</th></tr>'+items.map(function(i){return '<tr><td><code>'+esc(i.name)+'</code></td><td class="hint">'+esc(i.url||'')+'</td><td class="hint">'+esc(i.group||'')+'</td><td>'+esc(i.type)+'</td><td><button data-act="share" data-name="'+esc(i.name)+'">分享</button><button data-act="edit-item" data-name="'+esc(i.name)+'">编辑</button><button class="danger" data-act="item-delete" data-name="'+esc(i.name)+'">删除</button></td></tr>'}).join('')+'</table>';
+  box.innerHTML='<table><tr><th>名称</th><th>网址</th><th>分组</th><th>类型</th><th>操作</th></tr>'+items.map(function(i){return '<tr><td><code>'+esc(i.name)+'</code>'+(i.noApproval?' <span class="pill">免审批</span>':'')+'</td><td class="hint">'+esc(i.url||'')+'</td><td class="hint">'+esc(i.group||'')+'</td><td>'+esc(i.type)+'</td><td><button data-act="share" data-name="'+esc(i.name)+'">分享</button><button data-act="edit-item" data-name="'+esc(i.name)+'">编辑</button><button class="danger" data-act="item-delete" data-name="'+esc(i.name)+'">删除</button></td></tr>'}).join('')+'</table>';
   var gsel=$('group-filter');if(gsel){var current=gsel.value;var groups=Array.from(new Set(state.items.map(function(i){return i.group||''}))).filter(Boolean).sort();gsel.innerHTML='<option value="">全部分组</option>'+groups.map(function(g){return '<option value="'+esc(g)+'">'+esc(g)+'</option>'}).join('');gsel.value=current}}
 function renderAgents(){var box=$('agents-box');if(!state.agents.length){box.innerHTML='<div class="empty">暂无 agent</div>';return}
   box.innerHTML='<table><tr><th>Agent</th><th>Token</th><th>可读条目</th><th>操作</th></tr>'+state.agents.map(function(a){var allow=a.allow&&a.allow.length?a.allow.join(', '):'全部';var label=a.alias||a.name;var tokenCell=a.oauth?'<code>OAuth 2.1</code>':'<code>'+esc(a.tokenPreview||'')+'</code> <button data-act="copy" data-agent="'+esc(a.name)+'">复制</button>';var ops='<button data-act="agent-alias" data-agent="'+esc(a.name)+'">改名</button>';if(!a.oauth){ops+='<button data-act="access" data-agent="'+esc(a.name)+'">设置可读</button><button data-act="agent-write" data-agent="'+esc(a.name)+'" data-allow="'+((state.agentWrite&&state.agentWrite[a.name])?'0':'1')+'">写入:'+((state.agentWrite&&state.agentWrite[a.name])?'开':'关')+'</button><button data-act="rotate" data-agent="'+esc(a.name)+'">轮换</button><button class="danger" data-act="agent-delete" data-agent="'+esc(a.name)+'">删除</button>'}return '<tr><td><b>'+esc(label)+'</b>'+(a.alias?'<br><span class="hint">'+esc(a.name)+'</span>':'')+'</td><td>'+tokenCell+'</td><td class="hint">'+esc(allow)+'</td><td>'+ops+'</td></tr>'}).join('')+'</table>'}
@@ -894,7 +895,7 @@ document.addEventListener('submit',async function(e){var f=e.target;try{
   if(f.id==='unlock-form'){e.preventDefault();toast('解锁中…');var r=await post('/api/unlock',{password:f.password.value});f.password.value='';toast(r.ok?'已解锁':'解锁失败');await loadAll()}
   else if(f.id==='item-form'){e.preventDefault();var d=new FormData(f);var body={name:d.get('name'),value:d.get('value')||'',notes:d.get('notes')||''};await post('/api/items/save',body);f.reset();toast('已保存');await loadAll()}
   else if(f.id==='agent-form'){e.preventDefault();await post('/api/agents/add',{name:f.name.value});f.reset();toast('已添加');await loadAll()}
-  else if(f.id==='item-edit-form'){e.preventDefault();var ed=new FormData(f);await post('/api/items/save',{name:ed.get('name'),url:ed.get('url')||'',group:ed.get('group')||'',value:ed.get('value')||'',notes:ed.get('notes')||''});toast('已更新');closeModal();await loadAll()}
+  else if(f.id==='item-edit-form'){e.preventDefault();var ed=new FormData(f);await post('/api/items/save',{name:ed.get('name'),url:ed.get('url')||'',group:ed.get('group')||'',value:ed.get('value')||'',notes:ed.get('notes')||'',noApproval:ed.get('noApproval')?'1':'0'});toast('已更新');closeModal();await loadAll()}
 }catch(err){toast(err.message,true)}});
 document.addEventListener('click',async function(e){var b=e.target.closest('[data-act]');if(!b)return;var act=b.getAttribute('data-act');
   try{
@@ -903,7 +904,7 @@ document.addEventListener('click',async function(e){var b=e.target.closest('[dat
     else if(act==='logout'){await post('/api/logout',{});location.href='/login'}
     else if(act==='decide'){await post('/api/requests/'+encodeURIComponent(b.getAttribute('data-id'))+'/decide',{decision:b.getAttribute('data-decision')});await loadAll()}
     else if(act==='share'){openShare(b.getAttribute('data-name'))}
-    else if(act==='edit-item'){var it=state.items.find(function(x){return x.name===b.getAttribute('data-name')});if(it)openModal('编辑「'+it.name+'」','<form id="item-edit-form"><input type="hidden" name="name" value="'+esc(it.name)+'"><label class="hint">网址<input name="url" value="'+esc(it.url||'')+'" style="width:100%"></label><label class="hint">分组<input name="group" value="'+esc(it.group||'')+'" style="width:100%"></label><label class="hint">新密钥值（留空不改）<input type="password" name="value" style="width:100%"></label><label class="hint">备注<input name="notes" style="width:100%"></label><button class="primary">保存</button></form>')}
+    else if(act==='edit-item'){var it=state.items.find(function(x){return x.name===b.getAttribute('data-name')});if(it)openModal('编辑「'+it.name+'」','<form id="item-edit-form"><input type="hidden" name="name" value="'+esc(it.name)+'"><label class="hint">网址<input name="url" value="'+esc(it.url||'')+'" style="width:100%"></label><label class="hint">分组<input name="group" value="'+esc(it.group||'')+'" style="width:100%"></label><label class="hint">新密钥值（留空不改）<input type="password" name="value" style="width:100%"></label><label class="hint">备注<input name="notes" style="width:100%"></label><label class="chk"><input type="checkbox" name="noApproval" value="1" '+(it.noApproval?'checked':'')+'> 免审批（自动读取，仍记录日志）</label><button class="primary">保存</button></form>')}
     else if(act==='share-go'){await doShare()}
     else if(act==='item-delete'){if(!confirm('删除条目「'+b.getAttribute('data-name')+'」？'))return;await post('/api/items/delete',{name:b.getAttribute('data-name')});await loadAll();toast('已删除')}
     else if(act==='access'){openAccess(b.getAttribute('data-agent'))}
@@ -988,6 +989,7 @@ form.inline{display:inline}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:
 .avatar img{width:100%;height:100%;object-fit:cover}
 .donut{width:150px;height:150px;border-radius:50%;position:relative;flex:0 0 auto}
 .donut-center{position:absolute;inset:26px;background:var(--card);border-radius:50%;display:grid;place-items:center;font-weight:650;font-size:17px}
+.pill{background:rgba(15,157,138,.12);color:var(--ok);border:1px solid rgba(15,157,138,.25);border-radius:999px;padding:1px 7px;font-size:10.5px;white-space:nowrap}
 .rank-table td,.rank-table th{padding:8px 8px;font-size:12.5px}
 .bar{height:6px;background:var(--btn);border-radius:99px;overflow:hidden;width:90px;display:inline-block;vertical-align:middle}
 .bar i{display:block;height:100%;background:var(--ok);border-radius:99px}
@@ -1016,7 +1018,7 @@ tbody tr:hover td{background:var(--hover)}
 <div class="hint" id="overview-info"></div></section>
 <section id="view-items" class="view"><div class="card"><h2>密钥条目</h2>
 <div class="row"><input id="item-search" placeholder="搜索名称或网址…" style="width:220px"><select id="group-filter"><option value="">全部分组</option></select><button data-act="sync-items">同步服务器</button>
-<form id="item-form" class="inline"><input name="name" placeholder="条目名" required><input name="url" placeholder="网址（可选，如 https://example.com）"><input name="group" placeholder="分组（可选）"><input type="password" name="value" placeholder="密钥值（留空不改）"><input name="notes" placeholder="备注"><button class="primary">新增 / 更新</button></form></div>
+<form id="item-form" class="inline"><input name="name" placeholder="条目名" required><input name="url" placeholder="网址（可选，如 https://example.com）"><input name="group" placeholder="分组（可选）"><input type="password" name="value" placeholder="密钥值（留空不改）"><input name="notes" placeholder="备注"><label class="chk"><input type="checkbox" name="noApproval" value="1"> 免审批</label><button class="primary">新增 / 更新</button></form></div>
 <div id="items-box" class="empty">加载中…</div></div></section>
 <section id="view-agents" class="view"><div class="card"><h2>Agents</h2>
 <div class="row"><form id="agent-form" class="inline"><input name="name" placeholder="新 agent 名（如 codex-office）" required><button class="primary">添加</button></form></div>
@@ -1117,7 +1119,7 @@ function renderStats(s){
   var updated=$('overview-updated');if(updated)updated.textContent='最后更新 '+new Date().toLocaleTimeString('zh-CN',{hour12:false})+' · 数据来自审计日志';
 }
 function agentLabel(name){if(!name)return '系统';var a=(state.agents||[]).find(function(x){return x.name===name});return (a&&a.alias)||name}
-function modeLabel(mode){return ({once:'仅本次','1h':'1 小时','24h':'24 小时','7d':'7 天',always:'永久',share:'主动分享',grant:'长期授权',share_once:'仅本次'})[mode]||mode||''}
+function modeLabel(mode){return ({once:'仅本次','1h':'1 小时','24h':'24 小时','7d':'7 天',always:'永久',share:'主动分享',grant:'长期授权','no-approval':'免审批'})[mode]||mode||''}
 function channelLabel(e){var s=e&&e.source;if(s==='telegram')return 'Telegram';if(s==='ntfy')return 'ntfy';if(s==='web')return '网页';return s?String(s):'网页/其他'}
 function describeEvent(e){
   var who=agentLabel(e.agent);var name=e.name?('「'+e.name+'」'):'';var mode=modeLabel(e.mode);
@@ -1192,7 +1194,7 @@ function renderItems(){var box=$('items-box');var q=($('item-search').value||'')
   var items=state.items.filter(function(i){var hay=(String(i.name)+' '+String(i.url||'')).toLowerCase();return (!q||hay.indexOf(q)>=0)&&(!gf||(i.group||'')===gf)});
   if(state.status&&!state.status.unlocked){box.innerHTML='<div class="empty">解锁后显示条目</div>';return}
   if(!items.length){box.innerHTML='<div class="empty">'+(q||gf?'没有匹配的条目':'暂无条目')+'</div>';return}
-  box.innerHTML='<table><tr><th>名称</th><th>网址</th><th>分组</th><th>类型</th><th>操作</th></tr>'+items.map(function(i){return '<tr><td><code>'+esc(i.name)+'</code></td><td class="hint">'+esc(i.url||'')+'</td><td class="hint">'+esc(i.group||'')+'</td><td>'+esc(i.type)+'</td><td><button data-act="share" data-name="'+esc(i.name)+'">分享</button><button data-act="edit-item" data-name="'+esc(i.name)+'">编辑</button><button class="danger" data-act="item-delete" data-name="'+esc(i.name)+'">删除</button></td></tr>'}).join('')+'</table>';
+  box.innerHTML='<table><tr><th>名称</th><th>网址</th><th>分组</th><th>类型</th><th>操作</th></tr>'+items.map(function(i){return '<tr><td><code>'+esc(i.name)+'</code>'+(i.noApproval?' <span class="pill">免审批</span>':'')+'</td><td class="hint">'+esc(i.url||'')+'</td><td class="hint">'+esc(i.group||'')+'</td><td>'+esc(i.type)+'</td><td><button data-act="share" data-name="'+esc(i.name)+'">分享</button><button data-act="edit-item" data-name="'+esc(i.name)+'">编辑</button><button class="danger" data-act="item-delete" data-name="'+esc(i.name)+'">删除</button></td></tr>'}).join('')+'</table>';
   var gsel=$('group-filter');if(gsel){var current=gsel.value;var groups=Array.from(new Set(state.items.map(function(i){return i.group||''}))).filter(Boolean).sort();gsel.innerHTML='<option value="">全部分组</option>'+groups.map(function(g){return '<option value="'+esc(g)+'">'+esc(g)+'</option>'}).join('');gsel.value=current}}
 function renderAgents(){var box=$('agents-box');if(!state.agents.length){box.innerHTML='<div class="empty">暂无 agent</div>';return}
   box.innerHTML='<table><tr><th>Agent</th><th>Token</th><th>可读条目</th><th>操作</th></tr>'+state.agents.map(function(a){var allow=a.allow&&a.allow.length?a.allow.join(', '):'全部';var label=a.alias||a.name;var tokenCell=a.oauth?'<code>OAuth 2.1</code>':'<code>'+esc(a.tokenPreview||'')+'</code> <button data-act="copy" data-agent="'+esc(a.name)+'">复制</button>';var ops='<button data-act="agent-alias" data-agent="'+esc(a.name)+'">改名</button>';if(!a.oauth){ops+='<button data-act="access" data-agent="'+esc(a.name)+'">设置可读</button><button data-act="agent-write" data-agent="'+esc(a.name)+'" data-allow="'+((state.agentWrite&&state.agentWrite[a.name])?'0':'1')+'">写入:'+((state.agentWrite&&state.agentWrite[a.name])?'开':'关')+'</button><button data-act="rotate" data-agent="'+esc(a.name)+'">轮换</button><button class="danger" data-act="agent-delete" data-agent="'+esc(a.name)+'">删除</button>'}return '<tr><td><b>'+esc(label)+'</b>'+(a.alias?'<br><span class="hint">'+esc(a.name)+'</span>':'')+'</td><td>'+tokenCell+'</td><td class="hint">'+esc(allow)+'</td><td>'+ops+'</td></tr>'}).join('')+'</table>'}
@@ -1220,9 +1222,9 @@ async function doShare(){var agents=[].slice.call(document.querySelectorAll('.sh
 async function doAccess(agent){var all=$('access-all').checked;var names=all?'':[].slice.call(document.querySelectorAll('.access-item:checked')).map(function(x){return x.value}).join(',');await post('/api/agents/access',{name:agent,allow:names});toast('已保存');closeModal();loadAll()}
 document.addEventListener('submit',async function(e){var f=e.target;try{
   if(f.id==='unlock-form'){e.preventDefault();toast('解锁中…');var r=await post('/api/unlock',{password:f.password.value});f.password.value='';toast(r.ok?'已解锁':'解锁失败');await loadAll()}
-  else if(f.id==='item-form'){e.preventDefault();var d=new FormData(f);await post('/api/items/save',{name:d.get('name'),value:d.get('value')||'',notes:d.get('notes')||'',url:d.get('url')||'',group:d.get('group')||''});f.reset();toast('已保存');await loadAll()}
+  else if(f.id==='item-form'){e.preventDefault();var d=new FormData(f);await post('/api/items/save',{name:d.get('name'),value:d.get('value')||'',notes:d.get('notes')||'',url:d.get('url')||'',group:d.get('group')||'',noApproval:d.get('noApproval')?'1':'0'});f.reset();toast('已保存');await loadAll()}
   else if(f.id==='agent-form'){e.preventDefault();await post('/api/agents/add',{name:f.name.value});f.reset();toast('已添加');await loadAll()}
-  else if(f.id==='item-edit-form'){e.preventDefault();var ed=new FormData(f);await post('/api/items/save',{name:ed.get('name'),url:ed.get('url')||'',group:ed.get('group')||'',value:ed.get('value')||'',notes:ed.get('notes')||''});toast('已更新');closeModal();await loadAll()}
+  else if(f.id==='item-edit-form'){e.preventDefault();var ed=new FormData(f);await post('/api/items/save',{name:ed.get('name'),url:ed.get('url')||'',group:ed.get('group')||'',value:ed.get('value')||'',notes:ed.get('notes')||'',noApproval:ed.get('noApproval')?'1':'0'});toast('已更新');closeModal();await loadAll()}
 }catch(err){toast(err.message,true)}});
 document.addEventListener('click',async function(e){var b=e.target.closest('[data-act]');if(!b)return;var act=b.getAttribute('data-act');
   try{
@@ -1231,7 +1233,7 @@ document.addEventListener('click',async function(e){var b=e.target.closest('[dat
     else if(act==='logout'){await post('/api/logout',{});location.href='/login'}
     else if(act==='decide'){await post('/api/requests/'+encodeURIComponent(b.getAttribute('data-id'))+'/decide',{decision:b.getAttribute('data-decision')});await loadAll()}
     else if(act==='share'){openShare(b.getAttribute('data-name'))}
-    else if(act==='edit-item'){var it=state.items.find(function(x){return x.name===b.getAttribute('data-name')});if(it)openModal('编辑「'+it.name+'」','<form id="item-edit-form"><input type="hidden" name="name" value="'+esc(it.name)+'"><label class="hint">网址<input name="url" value="'+esc(it.url||'')+'" style="width:100%"></label><label class="hint">分组<input name="group" value="'+esc(it.group||'')+'" style="width:100%"></label><label class="hint">新密钥值（留空不改）<input type="password" name="value" style="width:100%"></label><label class="hint">备注<input name="notes" style="width:100%"></label><button class="primary">保存</button></form>')}
+    else if(act==='edit-item'){var it=state.items.find(function(x){return x.name===b.getAttribute('data-name')});if(it)openModal('编辑「'+it.name+'」','<form id="item-edit-form"><input type="hidden" name="name" value="'+esc(it.name)+'"><label class="hint">网址<input name="url" value="'+esc(it.url||'')+'" style="width:100%"></label><label class="hint">分组<input name="group" value="'+esc(it.group||'')+'" style="width:100%"></label><label class="hint">新密钥值（留空不改）<input type="password" name="value" style="width:100%"></label><label class="hint">备注<input name="notes" style="width:100%"></label><label class="chk"><input type="checkbox" name="noApproval" value="1" '+(it.noApproval?'checked':'')+'> 免审批（自动读取，仍记录日志）</label><button class="primary">保存</button></form>')}
     else if(act==='share-go'){await doShare()}
     else if(act==='item-delete'){if(!confirm('删除条目「'+b.getAttribute('data-name')+'」？'))return;await post('/api/items/delete',{name:b.getAttribute('data-name')});await loadAll();toast('已删除')}
     else if(act==='access'){openAccess(b.getAttribute('data-agent'))}
@@ -2069,6 +2071,7 @@ const server = http.createServer(async (req, res) => {
         type: item.type,
         url: itemUrl(item),
         group: config.itemGroups?.[item.name] ?? '',
+        noApproval: config.noApprovalItems?.[item.name] === true,
       }))
       return json(res, 200, { items })
     }
@@ -2133,11 +2136,15 @@ const server = http.createServer(async (req, res) => {
       const notes = body.get('notes') || undefined
       const targetUrl = body.get('url') || undefined
       const group = (body.get('group') ?? '').trim()
+      const noApproval = body.get('noApproval') === '1'
       try {
         const result = await saveItem(name, value, notes, targetUrl)
         config.itemGroups ??= {}
         if (group.length === 0) delete config.itemGroups[name]
         else config.itemGroups[name] = group
+        config.noApprovalItems ??= {}
+        if (noApproval) config.noApprovalItems[name] = true
+        else delete config.noApprovalItems[name]
         saveConfig()
         invalidateItems()
         return json(res, 200, result)
@@ -2625,12 +2632,14 @@ const server = http.createServer(async (req, res) => {
               const name = String(args.name ?? '').trim()
               if (!validName(name)) throw new Error('invalid item name')
               if (!agentAllowed(agent, name)) throw new Error(`agent "${agent}" is not allowed to read "${name}"`)
-              if (validGrant(agent, name) === undefined) throw new Error(`no active grant; call request_access first (${PUBLIC_URL}/)`)
+              if (validGrant(agent, name) === undefined && config.noApprovalItems?.[name] !== true) throw new Error(`no active grant; call request_access first (${PUBLIC_URL}/)`)
               const value = await readItemValue(name)
               const grant = validGrant(agent, name)
-              grant.reads = (grant.reads ?? 0) + 1
-              saveGrants()
-              audit({ event: 'secret.read', agent, name, mode: 'grant', via: 'mcp' })
+              if (grant !== undefined) {
+                grant.reads = (grant.reads ?? 0) + 1
+                saveGrants()
+              }
+              audit({ event: 'secret.read', agent, name, mode: grant ? 'grant' : 'no-approval', via: 'mcp' })
               return reply({ content: [{ type: 'text', text: value }] })
             }
             throw new Error(`unknown tool: ${toolName}`)
@@ -2712,12 +2721,16 @@ const server = http.createServer(async (req, res) => {
           return json(res, 403, { error: `agent "${agent}" is not allowed to read "${name}"` })
         }
         const grant = validGrant(agent, name)
-        if (grant !== undefined) {
+        if (grant !== undefined || config.noApprovalItems?.[name] === true) {
           try {
             const value = await readItemValue(name)
-            grant.reads = (grant.reads ?? 0) + 1
-            saveGrants()
-            audit({ event: 'secret.read', agent, name, mode: grant.mode, reads: grant.reads, maxReads: grant.maxReads })
+            if (grant !== undefined) {
+              grant.reads = (grant.reads ?? 0) + 1
+              saveGrants()
+              audit({ event: 'secret.read', agent, name, mode: grant.mode, reads: grant.reads, maxReads: grant.maxReads })
+            } else {
+              audit({ event: 'secret.read', agent, name, mode: 'no-approval' })
+            }
             return json(res, 200, { value })
           } catch (error) {
             return json(res, 502, { error: String(error.message ?? error) })

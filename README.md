@@ -24,8 +24,9 @@ adds the missing agent-facing control plane.
 
 - **Vault-native**: uses the Bitwarden CLI against your existing vault. No new
   encrypted database to operate.
-- **Human in the loop**: first access opens a pending approval. Approve once, for a
-  limited time, or permanently; revoke or restore later.
+- **Human in the loop by default**: first access opens a pending approval. Approve once, for a
+  limited time, or permanently; revoke or restore later. Common items can be put in
+  **no-approval mode** (audit-only) when you prefer frictionless access.
 - **Per-agent identities**: each agent gets its own token (hashed at rest), item
   allowlists and optional write access. Rotate/delete independently.
 - **Audit-first**: who requested what, when, from which channel, and how many reads.
@@ -39,6 +40,8 @@ adds the missing agent-facing control plane.
 - Web dashboard: overview/charts, items (name, URL, group), search, edit, share,
   agents, grants, logs, profile/2FA, settings.
 - URL matching: items can store a website; agents can ask by URL/hostname.
+- Per-item **no-approval mode**: reads are returned immediately, but every read is
+  still counted and audited (`mode=no-approval`). Useful for common sites/logins.
 - Grants: once / 1h / 24h / 7d / permanent, optional read-count limit, extend,
   custom expiry, revoke, restore.
 - Approval request headers include signed links valid for 10 minutes.
