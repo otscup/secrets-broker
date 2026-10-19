@@ -3,7 +3,7 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![CI](https://github.com/otscup/secrets-broker/actions/workflows/ci.yml/badge.svg)](https://github.com/otscup/secrets-broker/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](package.json)
 
 A small, self-hosted **secrets broker for AI agents**. It stores credentials in any
