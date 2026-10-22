@@ -46,6 +46,13 @@ adds the missing agent-facing control plane.
 - **MCP native**: stdio adapter and a Streamable HTTP endpoint with OAuth 2.1
   discovery, dynamic client registration, PKCE and a browser consent page.
 
+## Try it before installing
+
+<https://demo.otscup.com> runs the same idea against a virtual vault: no install,
+no NodeWarden, no real credentials. Its own OIDC provider makes the whole flow —
+approve a request, read a key, watch the audit line — clickable in a minute. The
+demo resets itself, so poke at whatever you like.
+
 ## Features
 
 - Web dashboard: overview/charts, items (name, URL, group), search, edit, share,

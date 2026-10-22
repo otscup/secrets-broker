@@ -9,6 +9,7 @@ API / MCP 接口，并加上每个 Agent 独立的 token、显式审批、限时
 核心理念：**模型不需要看到密钥本身**。Agent 发起请求 → 你在网页 / Telegram /
 ntfy / Gotify / 微信（wxpush）里点同意 → Agent 拿到值；每次读取都能追溯到具体 Agent。
 
+
 ## Cloudflare Workers 版本
 
 另有 Cloudflare Workers 原生版本：
@@ -18,6 +19,12 @@ ntfy / Gotify / 微信（wxpush）里点同意 → Agent 拿到值；每次读�
 
 可移植的 Agent Skill 和 stdio MCP 桥接器：
 <https://github.com/otscup/secrets-broker-skill>。
+
+## 装之前先试试
+
+<https://demo.otscup.com> 用同一套界面跑在虚拟密钥库上：不用安装、不用
+NodeWarden、没有任何真实凭据。自带 OIDC 身份提供者，批准请求、读取密钥、看审计
+记录，一分钟能点完一遍。demo 会自己重置，随便点。 (Link the online demo)
 
 ## 功能
 
